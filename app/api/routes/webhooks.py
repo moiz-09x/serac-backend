@@ -53,3 +53,49 @@ async def _handle_linear(payload: dict) -> None:
 
     if event:
         await get_arq_pool().enqueue_job("process_event", event.model_dump(mode="json"))
+
+
+@router.post("/notion")
+async def notion_webhook(request: Request, background_tasks: BackgroundTasks):
+    body = await request.body()
+    _verify_notion_signature(request, body)
+    payload = await request.json()
+    background_tasks.add_task(_handle_notion, payload)
+    return {"ok": True}
+
+
+def _verify_notion_signature(request: Request, body: bytes) -> None:
+    if not settings.notion_webhook_secret:
+        return
+    sig = request.headers.get("x-notion-signature", "")
+    expected = "v0=" + hmac.new(
+        settings.notion_webhook_secret.encode(),
+        body,
+        hashlib.sha256,
+    ).hexdigest()
+    if not hmac.compare_digest(sig, expected):
+        raise HTTPException(status_code=401, detail="Invalid webhook signature")
+
+
+async def _handle_notion(payload: dict) -> None:
+    from app.connectors.notion.backfill import extract_page_text
+    from app.connectors.notion.client import NotionClient
+    from app.connectors.notion.normalizer import page_to_event, page_updated_to_event
+
+    tenant_id = uuid.UUID(settings.tenant_id)
+    event_type = payload.get("type", "")
+    entity = payload.get("entity", {})
+    page_id = entity.get("id", "")
+
+    if not page_id or event_type not in ("page.created", "page.updated"):
+        return
+
+    async with NotionClient(settings.notion_api_key) as client:
+        page = await client.get_page(page_id)
+        text = await extract_page_text(client, page_id)
+        if event_type == "page.created":
+            event = page_to_event(page, text, tenant_id)
+        else:
+            event = page_updated_to_event(page, text, tenant_id)
+
+    await get_arq_pool().enqueue_job("process_event", event.model_dump(mode="json"))

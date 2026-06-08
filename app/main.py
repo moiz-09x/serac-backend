@@ -9,6 +9,7 @@ logging.basicConfig(level=logging.INFO)
 from app.api.routes import health, webhooks
 from app.api.routes.query import router as query_router
 from app.connectors.linear import backfill as linear_backfill
+from app.connectors.notion import backfill as notion_backfill
 from app.connectors.slack import backfill as slack_backfill
 from app.connectors.slack import socket as slack_socket
 from app.core.config import settings
@@ -67,5 +68,12 @@ async def trigger_slack_backfill():
     import asyncio
     asyncio.create_task(slack_backfill.run(uuid.UUID(settings.tenant_id)))
     return {"status": "slack backfill started"}
+
+
+@app.post("/admin/backfill/notion")
+async def trigger_notion_backfill():
+    import asyncio
+    asyncio.create_task(notion_backfill.run(uuid.UUID(settings.tenant_id), settings.notion_api_key))
+    return {"status": "notion backfill started"}
 
 
