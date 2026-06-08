@@ -52,9 +52,7 @@ class Event(NodeBase):
 
 
 class DecisionThread(NodeBase):
-    topic_summary: str
     status: ThreadStatus = ThreadStatus.ACTIVE
-    confidence_score: float = 0.0
     resolved_at: datetime | None = None
 
 
@@ -69,9 +67,7 @@ class GoverningDoc(NodeBase):
 
 class Outcome(NodeBase):
     type: OutcomeType
-    financial_impact: float | None = None
     duration_ms: int | None = None
-    sentiment_score: float | None = None
 
 
 class Client(NodeBase):

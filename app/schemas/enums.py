@@ -32,12 +32,10 @@ class GoverningDocStatus(str, Enum):
 
 
 class OutcomeType(str, Enum):
+    COMPLETED = "Completed"
+    CANCELLED = "Cancelled"
     DEAL_WON = "DealWon"
     DEAL_LOST = "DealLost"
-    INCIDENT_RESOLVED = "IncidentResolved"
-    PROJECT_DELAYED = "ProjectDelayed"
-    CODE_ROLLBACK = "CodeRollback"
-    COMPLIANCE_VIOLATION = "ComplianceViolation"
 
 
 class PrincipalType(str, Enum):
