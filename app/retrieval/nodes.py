@@ -39,7 +39,7 @@ async def search(state: RetrievalState) -> dict:
                 CALL db.index.vector.queryNodes('event_embeddings', 10, $vec)
                 YIELD node AS evt, score
                 WHERE evt.tenant_id = $tid AND score >= $min_score
-                MATCH (evt)-[:PART_OF]->(t:DecisionThread {tenant_id: $tid})
+                MATCH (evt)-[:PART_OF]->(t:Thread {tenant_id: $tid})
                 WITH t.id AS thread_id, max(score) AS best_score
                 ORDER BY best_score DESC
                 LIMIT 5
@@ -77,7 +77,7 @@ async def expand(state: RetrievalState) -> dict:
         result = await session.run(
             """
             UNWIND $thread_ids AS tid
-            MATCH (t:DecisionThread {id: tid, tenant_id: $tenant})
+            MATCH (t:Thread {id: tid, tenant_id: $tenant})
             OPTIONAL MATCH (e:Event)-[:PART_OF]->(t)
             OPTIONAL MATCH (a:Actor)-[:EXECUTED]->(e)
             OPTIONAL MATCH (t)-[:RESULTED_IN]->(o:Outcome)

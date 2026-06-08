@@ -51,7 +51,7 @@ class Event(NodeBase):
     semantic_enrichment: SemanticEnrichment = SemanticEnrichment.PENDING
 
 
-class DecisionThread(NodeBase):
+class Thread(NodeBase):
     status: ThreadStatus = ThreadStatus.ACTIVE
     resolved_at: datetime | None = None
 

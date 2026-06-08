@@ -20,7 +20,7 @@ async def mark_stalled_threads(ctx: dict) -> None:
     async with get_driver().session(database=settings.neo4j_database) as session:
         await session.run(
             """
-            MATCH (t:DecisionThread {status: $active})
+            MATCH (t:Thread {status: $active})
             WHERE NOT EXISTS {
                 MATCH (e:Event)-[:PART_OF]->(t)
                 WHERE e.timestamp > datetime() - duration('P30D')
