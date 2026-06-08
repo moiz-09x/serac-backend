@@ -53,5 +53,15 @@ class Settings(BaseSettings):
     thread_attach_threshold: float = 0.65
     retrieval_min_score: float = 0.72
 
+    # ── Thread-stitch LLM judge ───────────────────────────────────────────────
+    stitch_llm_provider: str = "deepseek"
+    stitch_llm_model: str = "deepseek-chat"
+    # Scores at or above this are trusted directly; below → ambiguous zone
+    stitch_ambiguity_hi: float = 0.80
+    # If top-2 candidates are within this gap, call LLM even above ambiguity_hi
+    stitch_tie_gap: float = 0.05
+    # Max events fetched per candidate thread for LLM context
+    stitch_expand_limit: int = 10
+
 
 settings = Settings()
