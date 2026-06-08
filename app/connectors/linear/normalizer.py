@@ -18,7 +18,7 @@ def _scope(team: dict) -> AccessScopeItem:
     return AccessScopeItem(
         principal_type=PrincipalType.LINEAR_TEAM,
         principal_id=team["id"],
-        visibility=Visibility.RESTRICTED if team["private"] else Visibility.PUBLIC,
+        visibility=Visibility.RESTRICTED if team.get("private") else Visibility.PUBLIC,
     )
 
 

@@ -15,15 +15,15 @@ def _model() -> TextEmbedding:
 
 
 def embed(content: str) -> list[float]:
-    return list(next(_model().embed([content])))
+    return [float(v) for v in next(_model().embed([content]))]
 
 
 async def find_similar_thread(tenant_id: str, vector: list[float]) -> uuid.UUID | None:
     query = text("""
-        SELECT thread_id, 1 - (embedding <=> :vec::vector) AS similarity
+        SELECT thread_id, 1 - (embedding <=> CAST(:vec AS vector)) AS similarity
         FROM thread_embeddings
         WHERE tenant_id = :tid
-        ORDER BY embedding <=> :vec::vector
+        ORDER BY embedding <=> CAST(:vec AS vector)
         LIMIT 1
     """)
     async with get_engine().connect() as conn:
@@ -39,7 +39,7 @@ async def find_similar_thread(tenant_id: str, vector: list[float]) -> uuid.UUID 
 async def store_thread_embedding(thread_id: uuid.UUID, tenant_id: str, vector: list[float]) -> None:
     query = text("""
         INSERT INTO thread_embeddings (thread_id, tenant_id, embedding, created_at)
-        VALUES (:tid, :tenant, :vec::vector, :now)
+        VALUES (:tid, :tenant, CAST(:vec AS vector), :now)
         ON CONFLICT (thread_id) DO NOTHING
     """)
     async with get_engine().begin() as conn:

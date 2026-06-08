@@ -19,7 +19,7 @@ query {
 """
 
 _ISSUES_QUERY = """
-query($teamId: ID!, $after: String, $createdAfter: DateTime) {
+query($teamId: ID!, $after: String, $createdAfter: DateTimeOrDuration) {
   issues(
     filter: {
       team: { id: { eq: $teamId } }

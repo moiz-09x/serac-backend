@@ -22,6 +22,7 @@ class Settings(BaseSettings):
 
     tenant_id: str = ""
     linear_api_key: str = ""
+    linear_webhook_secret: str = ""
 
     # Slack — Socket Mode tokens (both required to enable Slack connector)
     slack_app_token: str = ""   # xapp-... (Socket Mode token)

@@ -12,7 +12,8 @@ class LinearClient:
 
     async def query(self, q: str, variables: dict | None = None) -> dict:
         resp = await self._http.post(_URL, json={"query": q, "variables": variables or {}})
-        resp.raise_for_status()
+        if not resp.is_success:
+            raise RuntimeError(f"Linear API {resp.status_code}: {resp.text}")
         data = resp.json()
         if "errors" in data:
             raise RuntimeError(f"Linear API: {data['errors']}")
