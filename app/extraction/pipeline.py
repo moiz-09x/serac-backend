@@ -156,8 +156,9 @@ async def _ensure_thread(
                     platform, etype, event.metadata.parent_native_id)
 
     # Scenario B: standalone message — find related thread via event embedding similarity.
-    # Query top-5 nearest events, group by thread, pick the thread with the highest
-    # cumulative score. This prevents a single noisy hit from winning.
+    # Query top-5 nearest events, group by thread, accumulate scores.
+    # Then apply three-zone logic + tie-break gate to decide whether to trust the
+    # vector result directly or escalate to the LLM stitch judge.
     elif text:
         from app.extraction.embeddings import embed
         vector = await asyncio.get_event_loop().run_in_executor(None, embed, text)
@@ -169,18 +170,49 @@ async def _ensure_thread(
             MATCH (evt)-[:PART_OF]->(thread:Thread {tenant_id: $tid})
             WITH thread.id AS thread_id, sum(score) AS total_score, max(score) AS best_score, count(*) AS hits
             ORDER BY total_score DESC
-            LIMIT 1
             RETURN thread_id, total_score, best_score, hits
             """,
             vec=vector, tid=tenant_id, threshold=settings.thread_attach_threshold,
         )
-        record = await result.single()
-        if record:
-            log.info("[thread-stitch] %s %s → Scenario B hit (total_score %.3f, best %.3f, hits %d, thread %s)",
-                     platform, etype, record["total_score"], record["best_score"], record["hits"], record["thread_id"])
-            return uuid.UUID(record["thread_id"]), record["best_score"]
-        log.info("[thread-stitch] %s %s → Scenario B miss (no match above %.2f) → new thread",
-                 platform, etype, settings.thread_attach_threshold)
+        candidates = [dict(r) async for r in result]
+
+        if candidates:
+            top = candidates[0]
+            second_best = candidates[1]["best_score"] if len(candidates) > 1 else 0.0
+            gap = top["best_score"] - second_best
+
+            # Clear hit AND no close competitor → trust vector directly
+            if top["best_score"] >= settings.stitch_ambiguity_hi and gap >= settings.stitch_tie_gap:
+                log.info(
+                    "[thread-stitch] %s %s → Scenario B clear hit "
+                    "(best=%.3f gap=%.3f total=%.3f hits=%d thread=%s)",
+                    platform, etype, top["best_score"], gap, top["total_score"],
+                    top["hits"], top["thread_id"],
+                )
+                return uuid.UUID(top["thread_id"]), top["best_score"]
+
+            # Ambiguous zone OR close contest → escalate to LLM judge
+            trigger = "ambiguous" if top["best_score"] < settings.stitch_ambiguity_hi else "tie"
+            log.info(
+                "[thread-stitch] %s %s → Scenario B %s (best=%.3f gap=%.3f) → LLM judge",
+                platform, etype, trigger, top["best_score"], gap,
+            )
+            from app.extraction.stitch_judge import llm_stitch_verdict
+            verdict_id, reason = await llm_stitch_verdict(
+                event_text=text,
+                candidates=candidates[:3],
+                session=session,
+                tenant_id=tenant_id,
+                event_platform=platform,
+                event_type=etype,
+            )
+            if verdict_id:
+                log.info("[thread-stitch] %s %s → LLM attached to %s (%s)", platform, etype, verdict_id, reason)
+                return uuid.UUID(verdict_id), top["best_score"]
+            log.info("[thread-stitch] %s %s → LLM rejected all candidates (%s) → new thread", platform, etype, reason)
+        else:
+            log.info("[thread-stitch] %s %s → Scenario B miss (no match above %.2f) → new thread",
+                     platform, etype, settings.thread_attach_threshold)
 
     # Create a new thread
     thread_id = uuid.uuid4()
