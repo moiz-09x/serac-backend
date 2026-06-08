@@ -78,9 +78,12 @@ def _verify_notion_signature(request: Request, body: bytes) -> None:
 
 
 async def _handle_notion(payload: dict) -> None:
+    from sqlalchemy import select
     from app.connectors.notion.backfill import extract_page_text
     from app.connectors.notion.client import NotionClient
     from app.connectors.notion.normalizer import page_to_event, page_updated_to_event
+    from app.db import get_session
+    from app.db.models import ConnectorToken
 
     tenant_id = uuid.UUID(settings.tenant_id)
     event_type = payload.get("type", "")
@@ -90,7 +93,23 @@ async def _handle_notion(payload: dict) -> None:
     if not page_id or event_type not in ("page.created", "page.updated"):
         return
 
-    async with NotionClient(settings.notion_api_key) as client:
+    # prefer OAuth token from DB; fall back to static config key for dev
+    api_key = settings.notion_api_key
+    async with get_session() as session:
+        result = await session.execute(
+            select(ConnectorToken).where(
+                ConnectorToken.tenant_id == tenant_id,
+                ConnectorToken.platform == "notion",
+            )
+        )
+        token = result.scalar_one_or_none()
+        if token:
+            api_key = token.access_token
+
+    if not api_key:
+        return
+
+    async with NotionClient(api_key) as client:
         page = await client.get_page(page_id)
         text = await extract_page_text(client, page_id)
         if event_type == "page.created":

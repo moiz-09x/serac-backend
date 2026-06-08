@@ -42,8 +42,12 @@ class Settings(BaseSettings):
     slack_app_token: str = ""   # xapp-... (Socket Mode token)
     slack_bot_token: str = ""   # xoxb-... (Bot token)
 
-    notion_api_key: str = ""
+    notion_api_key: str = ""          # fallback for dev/testing (no OAuth)
     notion_webhook_secret: str = ""
+
+    notion_oauth_client_id: str = ""
+    notion_oauth_client_secret: str = ""
+    notion_oauth_redirect_uri: str = ""
 
     # ── Observability ─────────────────────────────────────────────────────────
     langfuse_host: str = "http://localhost:3000"

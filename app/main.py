@@ -7,6 +7,7 @@ from fastapi import FastAPI
 logging.basicConfig(level=logging.INFO)
 
 from app.api.routes import health, webhooks
+from app.api.routes.auth import router as auth_router
 from app.api.routes.query import router as query_router
 from app.connectors.linear import backfill as linear_backfill
 from app.connectors.notion import backfill as notion_backfill
@@ -48,6 +49,7 @@ app = FastAPI(
 
 app.include_router(health.router)
 app.include_router(webhooks.router)
+app.include_router(auth_router)
 app.include_router(query_router)
 
 
@@ -73,7 +75,7 @@ async def trigger_slack_backfill():
 @app.post("/admin/backfill/notion")
 async def trigger_notion_backfill():
     import asyncio
-    asyncio.create_task(notion_backfill.run(uuid.UUID(settings.tenant_id), settings.notion_api_key))
+    asyncio.create_task(notion_backfill.run(uuid.UUID(settings.tenant_id)))
     return {"status": "notion backfill started"}
 
 
