@@ -5,6 +5,8 @@ from fastapi import FastAPI
 
 from app.api.routes import health, webhooks
 from app.connectors.linear import backfill as linear_backfill
+from app.connectors.slack import backfill as slack_backfill
+from app.connectors.slack import socket as slack_socket
 from app.core.config import settings
 from app.db import (
     close_driver,
@@ -21,7 +23,9 @@ async def lifespan(app: FastAPI):
     await init_driver()
     await init_engine()
     await init_pool()
+    await slack_socket.start()
     yield
+    await slack_socket.stop()
     await close_pool()
     await close_engine()
     await close_driver()
@@ -43,9 +47,14 @@ def root() -> dict[str, str]:
 
 
 @app.post("/admin/backfill/linear")
-async def trigger_backfill():
-    """Kick off a full Linear backfill for the configured tenant. Runs in background."""
+async def trigger_linear_backfill():
     import asyncio
-    tenant_id = uuid.UUID(settings.tenant_id)
-    asyncio.create_task(linear_backfill.run(tenant_id, settings.linear_api_key))
-    return {"status": "backfill started"}
+    asyncio.create_task(linear_backfill.run(uuid.UUID(settings.tenant_id), settings.linear_api_key))
+    return {"status": "linear backfill started"}
+
+
+@app.post("/admin/backfill/slack")
+async def trigger_slack_backfill():
+    import asyncio
+    asyncio.create_task(slack_backfill.run(uuid.UUID(settings.tenant_id)))
+    return {"status": "slack backfill started"}

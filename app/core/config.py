@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     neo4j_uri: str = "bolt://localhost:7687"
     neo4j_user: str = "neo4j"
     neo4j_password: str = "neo4j"
-    neo4j_database: str = "neo4j"  # single DB in v1; swap to tenant_{id} for multi-tenant
+    neo4j_database: str = "neo4j"
 
     postgres_dsn: str = "postgresql+psycopg://postgres:postgres@localhost:5432/brain"
 
@@ -20,8 +20,17 @@ class Settings(BaseSettings):
     micro_agent_model: str = "claude-haiku-4-5-20251001"
     synthesis_model: str = "claude-sonnet-4-6"
 
-    tenant_id: str = ""           # UUID for this deployment's tenant
-    linear_api_key: str = ""      # lin_api_xxxx from Linear settings
+    tenant_id: str = ""
+    linear_api_key: str = ""
+
+    # Slack — Socket Mode tokens (both required to enable Slack connector)
+    slack_app_token: str = ""   # xapp-... (Socket Mode token)
+    slack_bot_token: str = ""   # xoxb-... (Bot token)
+
+    # Embedding model (local, via fastembed — no API key needed)
+    embedding_model: str = "BAAI/bge-small-en-v1.5"
+    embedding_dim: int = 384
+    thread_attach_threshold: float = 0.85  # THREAD_ATTACH_THRESHOLD from spec
 
 
 settings = Settings()
