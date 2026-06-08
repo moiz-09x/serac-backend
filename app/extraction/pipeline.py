@@ -142,7 +142,7 @@ async def _ensure_thread(
     elif event.metadata.parent_native_id:
         result = await session.run(
             """
-            MATCH (e:Event {tenant_id: $tid, native_id: $nid})-[:PART_OF]->(t:DecisionThread)
+            MATCH (e:Event {tenant_id: $tid, native_id: $nid})-[:PART_OF]->(t:Thread)
             RETURN t.id AS id
             """,
             tid=tenant_id, nid=event.metadata.parent_native_id,
@@ -155,25 +155,30 @@ async def _ensure_thread(
         log.warning("[thread-stitch] %s %s → Scenario A MISS (parent %s not in graph) → new thread",
                     platform, etype, event.metadata.parent_native_id)
 
-    # Scenario B: standalone message — find related thread via event embedding similarity
+    # Scenario B: standalone message — find related thread via event embedding similarity.
+    # Query top-5 nearest events, group by thread, pick the thread with the highest
+    # cumulative score. This prevents a single noisy hit from winning.
     elif text:
         from app.extraction.embeddings import embed
         vector = await asyncio.get_event_loop().run_in_executor(None, embed, text)
         result = await session.run(
             """
-            CALL db.index.vector.queryNodes('event_embeddings', 1, $vec)
+            CALL db.index.vector.queryNodes('event_embeddings', 5, $vec)
             YIELD node AS evt, score
             WHERE evt.tenant_id = $tid AND score >= $threshold
-            MATCH (evt)-[:PART_OF]->(thread:DecisionThread {tenant_id: $tid})
-            RETURN thread.id AS id, score
+            MATCH (evt)-[:PART_OF]->(thread:Thread {tenant_id: $tid})
+            WITH thread.id AS thread_id, sum(score) AS total_score, max(score) AS best_score, count(*) AS hits
+            ORDER BY total_score DESC
+            LIMIT 1
+            RETURN thread_id, total_score, best_score, hits
             """,
             vec=vector, tid=tenant_id, threshold=settings.thread_attach_threshold,
         )
         record = await result.single()
         if record:
-            log.info("[thread-stitch] %s %s → Scenario B hit (score %.3f, thread %s)",
-                     platform, etype, record["score"], record["id"])
-            return uuid.UUID(record["id"]), record["score"]
+            log.info("[thread-stitch] %s %s → Scenario B hit (total_score %.3f, best %.3f, hits %d, thread %s)",
+                     platform, etype, record["total_score"], record["best_score"], record["hits"], record["thread_id"])
+            return uuid.UUID(record["thread_id"]), record["best_score"]
         log.info("[thread-stitch] %s %s → Scenario B miss (no match above %.2f) → new thread",
                  platform, etype, settings.thread_attach_threshold)
 
@@ -181,7 +186,7 @@ async def _ensure_thread(
     thread_id = uuid.uuid4()
     await session.run(
         """
-        CREATE (t:DecisionThread {
+        CREATE (t:Thread {
             id: $id, tenant_id: $tid,
             status: $status, created_at: $ts
         })
@@ -246,7 +251,7 @@ async def _create_edges(
     await session.run(
         """
         MATCH (e:Event {tenant_id: $tid, id: $eid})
-        MATCH (t:DecisionThread {tenant_id: $tid, id: $thid})
+        MATCH (t:Thread {tenant_id: $tid, id: $thid})
         CREATE (e)-[:PART_OF {timestamp: $ts, confidence: $confidence}]->(t)
         """,
         tid=tenant_id, eid=str(event_id), thid=str(thread_id), ts=ts, confidence=confidence,
@@ -280,7 +285,7 @@ async def _create_outcome(
 
     async with get_driver().session(database=settings.neo4j_database) as session:
         result = await session.run(
-            "MATCH (t:DecisionThread {tenant_id: $tid, id: $thid}) RETURN t.created_at AS created_at",
+            "MATCH (t:Thread {tenant_id: $tid, id: $thid}) RETURN t.created_at AS created_at",
             tid=tenant_id, thid=str(thread_id),
         )
         record = await result.single()
@@ -294,7 +299,7 @@ async def _create_outcome(
 
         await session.run(
             """
-            MATCH (t:DecisionThread {tenant_id: $tid, id: $thid})
+            MATCH (t:Thread {tenant_id: $tid, id: $thid})
             CREATE (o:Outcome {
                 id: $oid, tenant_id: $tid,
                 type: $type, duration_ms: $duration,
