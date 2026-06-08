@@ -323,4 +323,5 @@ def _group_kind(principal_type: PrincipalType) -> str:
     return {
         PrincipalType.LINEAR_TEAM: GroupKind.TEAM.value,
         PrincipalType.SLACK_CHANNEL: GroupKind.CHANNEL.value,
+        PrincipalType.NOTION_PAGE: GroupKind.CHANNEL.value,
     }.get(principal_type, GroupKind.ROLE.value)
