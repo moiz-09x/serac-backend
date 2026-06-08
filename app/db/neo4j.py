@@ -12,6 +12,18 @@ async def init_driver() -> None:
         auth=(settings.neo4j_user, settings.neo4j_password),
     )
     await _driver.verify_connectivity()
+    async with _driver.session(database=settings.neo4j_database) as session:
+        await session.run(
+            """
+            CREATE VECTOR INDEX event_embeddings IF NOT EXISTS
+            FOR (e:Event) ON (e.embedding)
+            OPTIONS {indexConfig: {
+                `vector.dimensions`: $dims,
+                `vector.similarity_function`: 'cosine'
+            }}
+            """,
+            dims=settings.embedding_dim,
+        )
 
 
 async def close_driver() -> None:
