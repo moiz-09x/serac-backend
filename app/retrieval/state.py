@@ -22,6 +22,7 @@ class RetrievalState(TypedDict):
     tenant_id: str
     sub_queries: list[str]
     matched_thread_ids: list[str]
+    thread_scores: dict[str, float]  # thread_id → best similarity score
     thread_contexts: list[ThreadContext]
     context_items: list[ContextItem]
     draft_answer: str

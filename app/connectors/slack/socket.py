@@ -1,8 +1,10 @@
+import asyncio
 import uuid
 
 from slack_bolt.async_app import AsyncApp
 from slack_bolt.adapter.socket_mode.async_handler import AsyncSocketModeHandler
 
+from app.connectors.slack.client import get_user_email, get_web_client
 from app.connectors.slack.normalizer import message_to_event
 from app.core.config import settings
 from app.db import get_arq_pool
@@ -23,7 +25,9 @@ def _make_app() -> AsyncApp:
         # per message. We store is_private=False as default; backfill sets it correctly.
         # For real-time events the access scope channel ID is what matters for VISIBLE_TO edges.
         is_private = event.get("channel_type") == "group"
-        canonical = message_to_event(event, channel_id, is_private, tenant_id)
+        user_id = event.get("user", "unknown")
+        email = await get_user_email(get_web_client(), user_id)
+        canonical = message_to_event(event, channel_id, is_private, tenant_id, email_hint=email)
         await get_arq_pool().enqueue_job("process_event", canonical.model_dump(mode="json"))
 
     return app
@@ -34,7 +38,7 @@ async def start() -> None:
     if not settings.slack_app_token or not settings.slack_bot_token:
         return
     _handler = AsyncSocketModeHandler(_make_app(), settings.slack_app_token)
-    await _handler.start_async()
+    asyncio.create_task(_handler.start_async())
 
 
 async def stop() -> None:

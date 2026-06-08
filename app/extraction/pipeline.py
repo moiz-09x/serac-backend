@@ -1,5 +1,6 @@
 import asyncio
 import hashlib
+import logging
 import uuid
 from datetime import datetime, timezone
 
@@ -14,9 +15,12 @@ from app.schemas import (
 )
 from app.schemas.enums import OutcomeType, ThreadStatus
 
+log = logging.getLogger(__name__)
+
 
 async def run(event: CanonicalEvent) -> None:
     if not await _dedup(event):
+        log.debug("dedup skip: %s %s", event.metadata.source_platform, event.metadata.native_event_id)
         return
     actor_id = await _resolve_actor(event)
     await _write_to_graph(event, actor_id)
@@ -36,11 +40,13 @@ async def _dedup(event: CanonicalEvent) -> bool:
 
 async def _resolve_actor(event: CanonicalEvent) -> uuid.UUID:
     native_uid = event.actor_signature.native_user_id
+    email = event.actor_signature.email_hint
     tenant_id = str(event.metadata.tenant_id)
     platform = event.metadata.source_platform.value.lower()
     id_prop = f"{platform}_uid"
 
     async with get_driver().session(database=settings.neo4j_database) as s:
+        # Fast path: actor already has this platform's UID
         result = await s.run(
             f"MATCH (a:Actor {{tenant_id: $tid, {id_prop}: $uid}}) RETURN a.id AS id",
             tid=tenant_id, uid=native_uid,
@@ -49,6 +55,23 @@ async def _resolve_actor(event: CanonicalEvent) -> uuid.UUID:
         if record:
             return uuid.UUID(record["id"])
 
+        # Cross-platform merge: find existing actor by email, add this platform's UID
+        if email:
+            result = await s.run(
+                "MATCH (a:Actor {tenant_id: $tid, name: $email}) RETURN a.id AS id",
+                tid=tenant_id, email=email,
+            )
+            record = await result.single()
+            if record:
+                actor_id = uuid.UUID(record["id"])
+                await s.run(
+                    f"MATCH (a:Actor {{tenant_id: $tid, id: $aid}}) SET a.{id_prop} = $uid",
+                    tid=tenant_id, aid=str(actor_id), uid=native_uid,
+                )
+                log.info("actor merge: %s platform uid added to existing actor %s", platform, actor_id)
+                return actor_id
+
+        # No match — create a new actor
         actor_id = uuid.uuid4()
         await s.run(
             f"""
@@ -59,7 +82,7 @@ async def _resolve_actor(event: CanonicalEvent) -> uuid.UUID:
             """,
             id=str(actor_id),
             tid=tenant_id,
-            name=event.actor_signature.email_hint or native_uid,
+            name=email or native_uid,
             status=ActorStatus.UNVERIFIED.value,
             uid=native_uid,
             ts=datetime.now(timezone.utc).isoformat(),
@@ -108,9 +131,12 @@ async def _ensure_thread(
     """
     text = event.delta_payload.text_content
 
+    platform = event.metadata.source_platform.value
+    etype = event.metadata.event_type
+
     # IssueCreated always anchors its own new thread — never attach to an existing one
     if event.metadata.event_type == "IssueCreated":
-        pass  # fall through to create a new thread
+        log.info("[thread-stitch] %s %s → new thread (IssueCreated anchor)", platform, etype)
 
     # Scenario A: has an explicit parent — look up via the parent Event node
     elif event.metadata.parent_native_id:
@@ -123,8 +149,11 @@ async def _ensure_thread(
         )
         record = await result.single()
         if record:
+            log.info("[thread-stitch] %s %s → Scenario A hit (parent %s)",
+                     platform, etype, event.metadata.parent_native_id)
             return uuid.UUID(record["id"]), 1.0
-        # Parent event not yet in graph — fall through and create a new thread
+        log.warning("[thread-stitch] %s %s → Scenario A MISS (parent %s not in graph) → new thread",
+                    platform, etype, event.metadata.parent_native_id)
 
     # Scenario B: standalone message — find related thread via event embedding similarity
     elif text:
@@ -142,7 +171,11 @@ async def _ensure_thread(
         )
         record = await result.single()
         if record:
+            log.info("[thread-stitch] %s %s → Scenario B hit (score %.3f, thread %s)",
+                     platform, etype, record["score"], record["id"])
             return uuid.UUID(record["id"]), record["score"]
+        log.info("[thread-stitch] %s %s → Scenario B miss (no match above %.2f) → new thread",
+                 platform, etype, settings.thread_attach_threshold)
 
     # Create a new thread
     thread_id = uuid.uuid4()

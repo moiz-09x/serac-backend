@@ -30,6 +30,7 @@ def message_to_event(
     channel_id: str,
     is_private: bool,
     tenant_id: uuid.UUID,
+    email_hint: str | None = None,
 ) -> CanonicalEvent:
     thread_ts = msg.get("thread_ts")
     is_reply = thread_ts and thread_ts != msg["ts"]
@@ -46,6 +47,7 @@ def message_to_event(
         ),
         actor_signature=ActorSignature(
             native_user_id=msg.get("user", "unknown"),
+            email_hint=email_hint,
         ),
         delta_payload=DeltaPayload(text_content=msg.get("text", "")),
         access_scope=[_scope(channel_id, is_private)],

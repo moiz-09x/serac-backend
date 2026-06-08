@@ -50,7 +50,8 @@ class Settings(BaseSettings):
     # ── Embedding (local, via fastembed — no API key needed) ──────────────────
     embedding_model: str = "BAAI/bge-small-en-v1.5"
     embedding_dim: int = 384
-    thread_attach_threshold: float = 0.85
+    thread_attach_threshold: float = 0.65
+    retrieval_min_score: float = 0.72
 
 
 settings = Settings()

@@ -67,6 +67,7 @@ async def query(request: QueryRequest):
                 "tenant_id": settings.tenant_id,
                 "sub_queries": [],
                 "matched_thread_ids": [],
+                "thread_scores": {},
                 "thread_contexts": [],
                 "context_items": [],
                 "draft_answer": "",

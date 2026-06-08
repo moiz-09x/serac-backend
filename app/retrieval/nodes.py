@@ -11,7 +11,11 @@ from app.retrieval.state import ContextItem, RetrievalState, ThreadContext
 
 async def decompose(state: RetrievalState) -> dict:
     prompt = (
-        "Break the following question into 2-3 short, focused search queries. "
+        "Break the following question into 1-3 short, focused search queries.\n"
+        "Rules:\n"
+        "- If the question is already specific and focused, return exactly 1 query.\n"
+        "- Only generate multiple queries if they are meaningfully different — attacking different aspects, entities, or time periods.\n"
+        "- Never generate near-duplicate or rephrased versions of the same query.\n"
         "Return only a JSON array of strings, no explanation.\n\n"
         f"Question: {state['question']}"
     )
@@ -34,7 +38,7 @@ async def search(state: RetrievalState) -> dict:
                 """
                 CALL db.index.vector.queryNodes('event_embeddings', 10, $vec)
                 YIELD node AS evt, score
-                WHERE evt.tenant_id = $tid
+                WHERE evt.tenant_id = $tid AND score >= $min_score
                 MATCH (evt)-[:PART_OF]->(t:DecisionThread {tenant_id: $tid})
                 WITH t.id AS thread_id, max(score) AS best_score
                 ORDER BY best_score DESC
@@ -43,6 +47,7 @@ async def search(state: RetrievalState) -> dict:
                 """,
                 vec=vector,
                 tid=state["tenant_id"],
+                min_score=settings.retrieval_min_score,
             )
             async for row in result:
                 tid = row["thread_id"]
@@ -51,7 +56,10 @@ async def search(state: RetrievalState) -> dict:
 
     # Return top 5 threads by score across all sub-queries
     top = sorted(matched.items(), key=lambda x: x[1], reverse=True)[:5]
-    return {"matched_thread_ids": [tid for tid, _ in top]}
+    return {
+        "matched_thread_ids": [tid for tid, _ in top],
+        "thread_scores": {tid: round(score, 4) for tid, score in top},
+    }
 
 
 async def expand(state: RetrievalState) -> dict:

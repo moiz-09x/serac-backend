@@ -1,7 +1,10 @@
+import logging
 import uuid
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+
+logging.basicConfig(level=logging.INFO)
 
 from app.api.routes import health, webhooks
 from app.api.routes.query import router as query_router
