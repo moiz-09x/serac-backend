@@ -1,0 +1,51 @@
+services:
+
+  # ── Knowledge graph ──────────────────────────────────────────────────────
+  neo4j:
+    image: neo4j:5
+    ports:
+      - "7474:7474"   # Neo4j Browser (open http://localhost:7474 to see the graph)
+      - "7687:7687"   # Bolt — what the app connects to
+    environment:
+      NEO4J_AUTH: neo4j/brain_local
+    volumes:
+      - neo4j_data:/data
+
+  # ── App DB + vector store ─────────────────────────────────────────────────
+  postgres:
+    image: pgvector/pgvector:pg17   # standard Postgres 17 + pgvector extension pre-installed
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: brain
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  adminer:
+    image: adminer
+    ports:
+      - "8080:8080"   # open http://localhost:8080 — select PostgreSQL, server: postgres
+    depends_on:
+      - postgres
+
+  # ── Cache / dedup / job queue ─────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+  redisinsight:
+    image: redis/redisinsight:latest
+    ports:
+      - "8001:5540"   # open http://localhost:8001
+    depends_on:
+      - redis
+
+volumes:
+  neo4j_data:
+  postgres_data:
+  redis_data:
