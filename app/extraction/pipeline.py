@@ -12,6 +12,7 @@ from app.schemas import (
     PrincipalType,
     SemanticEnrichment,
 )
+from app.schemas.enums import OutcomeType, ThreadStatus
 
 
 async def run(event: CanonicalEvent) -> None:
@@ -71,82 +72,93 @@ async def _resolve_actor(event: CanonicalEvent) -> uuid.UUID:
 async def _write_to_graph(event: CanonicalEvent, actor_id: uuid.UUID) -> None:
     tenant_id = str(event.metadata.tenant_id)
     async with get_driver().session(database=settings.neo4j_database) as s:
-        thread_id, is_new_thread = await _ensure_thread(s, event, tenant_id)
+        thread_id, confidence = await _ensure_thread(s, event, tenant_id)
         event_id = await _create_event(s, event, tenant_id)
-        await _create_edges(s, event, tenant_id, actor_id, event_id, thread_id)
+        await _create_edges(s, event, tenant_id, actor_id, event_id, thread_id, confidence)
 
-    if is_new_thread and event.delta_payload.text_content:
-        await _store_embedding(thread_id, tenant_id, event.delta_payload.text_content)
+    if event.delta_payload.text_content:
+        await _store_event_embedding(event_id, tenant_id, event.delta_payload.text_content)
+
+    if event.outcome_signal:
+        await _create_outcome(thread_id, tenant_id, event.outcome_signal)
 
 
-async def _store_embedding(thread_id: uuid.UUID, tenant_id: str, text: str) -> None:
-    from app.extraction.embeddings import embed, store_thread_embedding
-    # Run the CPU-bound embed call in a thread pool so it doesn't block the event loop
+async def _store_event_embedding(event_id: uuid.UUID, tenant_id: str, text: str) -> None:
+    from app.extraction.embeddings import embed
     vector = await asyncio.get_event_loop().run_in_executor(None, embed, text)
-    await store_thread_embedding(thread_id, tenant_id, vector)
+    async with get_driver().session(database=settings.neo4j_database) as session:
+        await session.run(
+            "MATCH (e:Event {tenant_id: $tid, id: $eid}) SET e.embedding = $vec",
+            tid=tenant_id, eid=str(event_id), vec=vector,
+        )
 
 
 async def _ensure_thread(
     session, event: CanonicalEvent, tenant_id: str
-) -> tuple[uuid.UUID, bool]:
-    """Returns (thread_id, is_new_thread).
+) -> tuple[uuid.UUID, float]:
+    """Returns (thread_id, confidence).
 
     Scenario A — explicit parent pointer (Linear comments, Slack thread replies):
-        look up by native_issue_id / parent message native_id.
+        find the Event that carries the parent nativeId and follow PART_OF to its thread.
+        confidence = 1.0 (deterministic).
 
-    Scenario B — no parent pointer (standalone Slack messages):
-        embed text → similarity search → attach or create new thread.
+    Scenario B — standalone message (no parent pointer):
+        vector similarity search across existing event embeddings.
+        confidence = cosine score if matched, 1.0 if new thread created.
     """
     text = event.delta_payload.text_content
 
-    # Scenario A: has an explicit parent
-    if event.metadata.parent_native_id:
+    # IssueCreated always anchors its own new thread — never attach to an existing one
+    if event.metadata.event_type == "IssueCreated":
+        pass  # fall through to create a new thread
+
+    # Scenario A: has an explicit parent — look up via the parent Event node
+    elif event.metadata.parent_native_id:
         result = await session.run(
-            "MATCH (t:DecisionThread {tenant_id: $tid, native_issue_id: $iid}) RETURN t.id AS id",
-            tid=tenant_id, iid=event.metadata.parent_native_id,
+            """
+            MATCH (e:Event {tenant_id: $tid, native_id: $nid})-[:PART_OF]->(t:DecisionThread)
+            RETURN t.id AS id
+            """,
+            tid=tenant_id, nid=event.metadata.parent_native_id,
         )
         record = await result.single()
         if record:
-            return uuid.UUID(record["id"]), False
-        # Parent not in graph yet — fall through and create a new thread
-        native_anchor = event.metadata.parent_native_id
+            return uuid.UUID(record["id"]), 1.0
+        # Parent event not yet in graph — fall through and create a new thread
 
-    # IssueCreated: the issue itself is always the thread anchor
-    elif event.metadata.event_type == "IssueCreated":
-        native_anchor = event.metadata.native_event_id
+    # Scenario B: standalone message — find related thread via event embedding similarity
+    elif text:
+        from app.extraction.embeddings import embed
+        vector = await asyncio.get_event_loop().run_in_executor(None, embed, text)
         result = await session.run(
-            "MATCH (t:DecisionThread {tenant_id: $tid, native_issue_id: $iid}) RETURN t.id AS id",
-            tid=tenant_id, iid=native_anchor,
+            """
+            CALL db.index.vector.queryNodes('event_embeddings', 1, $vec)
+            YIELD node AS evt, score
+            WHERE evt.tenant_id = $tid AND score >= $threshold
+            MATCH (evt)-[:PART_OF]->(thread:DecisionThread {tenant_id: $tid})
+            RETURN thread.id AS id, score
+            """,
+            vec=vector, tid=tenant_id, threshold=settings.thread_attach_threshold,
         )
         record = await result.single()
         if record:
-            return uuid.UUID(record["id"]), False
-
-    # Scenario B: standalone message — use semantic similarity
-    else:
-        native_anchor = event.metadata.native_event_id
-        if text:
-            from app.extraction.embeddings import embed, find_similar_thread
-            vector = await asyncio.get_event_loop().run_in_executor(None, embed, text)
-            existing = await find_similar_thread(tenant_id, vector)
-            if existing:
-                return existing, False
+            return uuid.UUID(record["id"]), record["score"]
 
     # Create a new thread
     thread_id = uuid.uuid4()
-    summary = (text or "")[:200] or event.metadata.event_type
     await session.run(
         """
         CREATE (t:DecisionThread {
-            id: $id, tenant_id: $tid, native_issue_id: $anchor,
-            topic_summary: $summary, status: 'Active',
-            confidence_score: 1.0, created_at: $ts
+            id: $id, tenant_id: $tid,
+            status: $status, created_at: $ts
         })
         """,
-        id=str(thread_id), tid=tenant_id, anchor=native_anchor,
-        summary=summary, ts=event.metadata.timestamp.isoformat(),
+        id=str(thread_id),
+        tid=tenant_id,
+        status=ThreadStatus.ACTIVE.value,
+        ts=event.metadata.timestamp.isoformat(),
     )
-    return thread_id, True
+    return thread_id, 1.0
 
 
 async def _create_event(session, event: CanonicalEvent, tenant_id: str) -> uuid.UUID:
@@ -159,6 +171,7 @@ async def _create_event(session, event: CanonicalEvent, tenant_id: str) -> uuid.
             id: $id, tenant_id: $tid,
             source_platform: $platform, native_id: $native_id,
             timestamp: $ts, event_type: $etype,
+            text_content: $text,
             delta_fields: $dfields,
             semantic_enrichment: $enrichment,
             created_at: $now
@@ -170,6 +183,7 @@ async def _create_event(session, event: CanonicalEvent, tenant_id: str) -> uuid.
         native_id=event.metadata.native_event_id,
         ts=event.metadata.timestamp.isoformat(),
         etype=event.metadata.event_type,
+        text=event.delta_payload.text_content or "",
         dfields=delta_fields,
         enrichment=SemanticEnrichment.PENDING.value,
         now=datetime.now(timezone.utc).isoformat(),
@@ -184,6 +198,7 @@ async def _create_edges(
     actor_id: uuid.UUID,
     event_id: uuid.UUID,
     thread_id: uuid.UUID,
+    confidence: float,
 ) -> None:
     ts = event.metadata.timestamp.isoformat()
 
@@ -199,9 +214,9 @@ async def _create_edges(
         """
         MATCH (e:Event {tenant_id: $tid, id: $eid})
         MATCH (t:DecisionThread {tenant_id: $tid, id: $thid})
-        CREATE (e)-[:PART_OF {timestamp: $ts}]->(t)
+        CREATE (e)-[:PART_OF {timestamp: $ts, confidence: $confidence}]->(t)
         """,
-        tid=tenant_id, eid=str(event_id), thid=str(thread_id), ts=ts,
+        tid=tenant_id, eid=str(event_id), thid=str(thread_id), ts=ts, confidence=confidence,
     )
 
     for scope in event.access_scope:
@@ -222,6 +237,48 @@ async def _create_edges(
             now=datetime.now(timezone.utc).isoformat(),
             eid=str(event_id),
         )
+
+
+async def _create_outcome(
+    thread_id: uuid.UUID, tenant_id: str, outcome_type: OutcomeType
+) -> None:
+    now = datetime.now(timezone.utc)
+    outcome_id = uuid.uuid4()
+
+    async with get_driver().session(database=settings.neo4j_database) as session:
+        result = await session.run(
+            "MATCH (t:DecisionThread {tenant_id: $tid, id: $thid}) RETURN t.created_at AS created_at",
+            tid=tenant_id, thid=str(thread_id),
+        )
+        record = await result.single()
+        if not record:
+            return
+
+        thread_created = datetime.fromisoformat(record["created_at"])
+        if thread_created.tzinfo is None:
+            thread_created = thread_created.replace(tzinfo=timezone.utc)
+        duration_ms = int((now - thread_created).total_seconds() * 1000)
+
+        await session.run(
+            """
+            MATCH (t:DecisionThread {tenant_id: $tid, id: $thid})
+            CREATE (o:Outcome {
+                id: $oid, tenant_id: $tid,
+                type: $type, duration_ms: $duration,
+                created_at: $now
+            })
+            CREATE (t)-[:RESULTED_IN {timestamp: $now}]->(o)
+            SET t.status = $concluded, t.resolved_at = $now
+            """,
+            oid=str(outcome_id),
+            tid=tenant_id,
+            thid=str(thread_id),
+            type=outcome_type.value,
+            duration=duration_ms,
+            now=now.isoformat(),
+            concluded=ThreadStatus.CONCLUDED.value,
+        )
+
 
 
 def _group_kind(principal_type: PrincipalType) -> str:
