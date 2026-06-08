@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app.api.routes import health, webhooks
+from app.api.routes.query import router as query_router
 from app.connectors.linear import backfill as linear_backfill
 from app.connectors.slack import backfill as slack_backfill
 from app.connectors.slack import socket as slack_socket
@@ -43,6 +44,7 @@ app = FastAPI(
 
 app.include_router(health.router)
 app.include_router(webhooks.router)
+app.include_router(query_router)
 
 
 @app.get("/")
@@ -62,3 +64,5 @@ async def trigger_slack_backfill():
     import asyncio
     asyncio.create_task(slack_backfill.run(uuid.UUID(settings.tenant_id)))
     return {"status": "slack backfill started"}
+
+
