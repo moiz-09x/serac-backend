@@ -45,36 +45,10 @@ async def extract_page_text(client: NotionClient, block_id: str, depth: int = 0)
     return "\n".join(parts)
 
 
-async def run(tenant_id: uuid.UUID) -> None:
-    api_key = await _resolve_token(tenant_id)
-    if not api_key:
-        log.error("No Notion token for tenant %s — connect via /auth/notion or set NOTION_API_KEY", tenant_id)
-        return
+async def run(tenant_id: uuid.UUID, api_key: str) -> None:
     cutoff = datetime.now(timezone.utc) - timedelta(days=365)
     async with NotionClient(api_key) as client:
         await _backfill_pages(client, tenant_id, cutoff)
-
-
-async def _resolve_token(tenant_id: uuid.UUID) -> str | None:
-    """Prefer OAuth token from DB; fall back to static config key for dev."""
-    from app.core.config import settings
-    try:
-        from sqlalchemy import select
-        from app.db import get_session
-        from app.db.models import ConnectorToken
-        async with get_session() as session:
-            result = await session.execute(
-                select(ConnectorToken).where(
-                    ConnectorToken.tenant_id == tenant_id,
-                    ConnectorToken.platform == "notion",
-                )
-            )
-            token = result.scalar_one_or_none()
-            if token:
-                return token.access_token
-    except Exception:
-        pass
-    return settings.notion_api_key or None
 
 
 async def _backfill_pages(client: NotionClient, tenant_id: uuid.UUID, cutoff: datetime) -> None:
