@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import uuid
 from datetime import datetime, timezone
@@ -36,7 +37,7 @@ async def _resolve_actor(event: CanonicalEvent) -> uuid.UUID:
     native_uid = event.actor_signature.native_user_id
     tenant_id = str(event.metadata.tenant_id)
     platform = event.metadata.source_platform.value.lower()
-    id_prop = f"{platform}_uid"  # e.g. "linear_uid", "slack_uid"
+    id_prop = f"{platform}_uid"
 
     async with get_driver().session(database=settings.neo4j_database) as s:
         result = await s.run(
@@ -65,50 +66,87 @@ async def _resolve_actor(event: CanonicalEvent) -> uuid.UUID:
         return actor_id
 
 
-# ── Stage 4: graph write ──────────────────────────────────────────────────────
+# ── Stage 4: graph write + embedding ─────────────────────────────────────────
 
 async def _write_to_graph(event: CanonicalEvent, actor_id: uuid.UUID) -> None:
     tenant_id = str(event.metadata.tenant_id)
     async with get_driver().session(database=settings.neo4j_database) as s:
-        thread_id = await _ensure_thread(s, event, tenant_id)
+        thread_id, is_new_thread = await _ensure_thread(s, event, tenant_id)
         event_id = await _create_event(s, event, tenant_id)
         await _create_edges(s, event, tenant_id, actor_id, event_id, thread_id)
 
+    if is_new_thread and event.delta_payload.text_content:
+        await _store_embedding(thread_id, tenant_id, event.delta_payload.text_content)
 
-async def _ensure_thread(session, event: CanonicalEvent, tenant_id: str) -> uuid.UUID:
-    if event.metadata.event_type == "IssueCreated":
-        issue_id = event.metadata.native_event_id
-        summary = (event.delta_payload.text_content or "")[:200]
-        created_at = event.metadata.timestamp.isoformat()
+
+async def _store_embedding(thread_id: uuid.UUID, tenant_id: str, text: str) -> None:
+    from app.extraction.embeddings import embed, store_thread_embedding
+    # Run the CPU-bound embed call in a thread pool so it doesn't block the event loop
+    vector = await asyncio.get_event_loop().run_in_executor(None, embed, text)
+    await store_thread_embedding(thread_id, tenant_id, vector)
+
+
+async def _ensure_thread(
+    session, event: CanonicalEvent, tenant_id: str
+) -> tuple[uuid.UUID, bool]:
+    """Returns (thread_id, is_new_thread).
+
+    Scenario A — explicit parent pointer (Linear comments, Slack thread replies):
+        look up by native_issue_id / parent message native_id.
+
+    Scenario B — no parent pointer (standalone Slack messages):
+        embed text → similarity search → attach or create new thread.
+    """
+    text = event.delta_payload.text_content
+
+    # Scenario A: has an explicit parent
+    if event.metadata.parent_native_id:
+        result = await session.run(
+            "MATCH (t:DecisionThread {tenant_id: $tid, native_issue_id: $iid}) RETURN t.id AS id",
+            tid=tenant_id, iid=event.metadata.parent_native_id,
+        )
+        record = await result.single()
+        if record:
+            return uuid.UUID(record["id"]), False
+        # Parent not in graph yet — fall through and create a new thread
+        native_anchor = event.metadata.parent_native_id
+
+    # IssueCreated: the issue itself is always the thread anchor
+    elif event.metadata.event_type == "IssueCreated":
+        native_anchor = event.metadata.native_event_id
+        result = await session.run(
+            "MATCH (t:DecisionThread {tenant_id: $tid, native_issue_id: $iid}) RETURN t.id AS id",
+            tid=tenant_id, iid=native_anchor,
+        )
+        record = await result.single()
+        if record:
+            return uuid.UUID(record["id"]), False
+
+    # Scenario B: standalone message — use semantic similarity
     else:
-        issue_id = event.metadata.parent_native_id
-        if not issue_id:
-            raise ValueError(f"Missing parent_native_id for {event.metadata.native_event_id}")
-        summary = None
-        created_at = None
+        native_anchor = event.metadata.native_event_id
+        if text:
+            from app.extraction.embeddings import embed, find_similar_thread
+            vector = await asyncio.get_event_loop().run_in_executor(None, embed, text)
+            existing = await find_similar_thread(tenant_id, vector)
+            if existing:
+                return existing, False
 
-    result = await session.run(
-        "MATCH (t:DecisionThread {tenant_id: $tid, native_issue_id: $iid}) RETURN t.id AS id",
-        tid=tenant_id, iid=issue_id,
-    )
-    record = await result.single()
-    if record:
-        return uuid.UUID(record["id"])
-
+    # Create a new thread
     thread_id = uuid.uuid4()
+    summary = (text or "")[:200] or event.metadata.event_type
     await session.run(
         """
         CREATE (t:DecisionThread {
-            id: $id, tenant_id: $tid, native_issue_id: $iid,
+            id: $id, tenant_id: $tid, native_issue_id: $anchor,
             topic_summary: $summary, status: 'Active',
             confidence_score: 1.0, created_at: $ts
         })
         """,
-        id=str(thread_id), tid=tenant_id, iid=issue_id,
-        summary=summary or issue_id,
-        ts=created_at or datetime.now(timezone.utc).isoformat(),
+        id=str(thread_id), tid=tenant_id, anchor=native_anchor,
+        summary=summary, ts=event.metadata.timestamp.isoformat(),
     )
-    return thread_id
+    return thread_id, True
 
 
 async def _create_event(session, event: CanonicalEvent, tenant_id: str) -> uuid.UUID:
