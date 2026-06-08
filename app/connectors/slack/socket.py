@@ -5,7 +5,7 @@ from slack_bolt.adapter.socket_mode.async_handler import AsyncSocketModeHandler
 
 from app.connectors.slack.normalizer import message_to_event
 from app.core.config import settings
-from app.extraction import pipeline
+from app.db import get_arq_pool
 
 _handler: AsyncSocketModeHandler | None = None
 
@@ -24,7 +24,7 @@ def _make_app() -> AsyncApp:
         # For real-time events the access scope channel ID is what matters for VISIBLE_TO edges.
         is_private = event.get("channel_type") == "group"
         canonical = message_to_event(event, channel_id, is_private, tenant_id)
-        await pipeline.run(canonical)
+        await get_arq_pool().enqueue_job("process_event", canonical.model_dump(mode="json"))
 
     return app
 

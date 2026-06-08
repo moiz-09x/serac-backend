@@ -10,7 +10,7 @@ from app.connectors.linear.normalizer import (
     state_change_to_event,
 )
 from app.core.config import settings
-from app.extraction import pipeline
+from app.db import get_arq_pool
 
 router = APIRouter(prefix="/webhooks", tags=["webhooks"])
 
@@ -43,13 +43,13 @@ async def _handle_linear(payload: dict) -> None:
     type_ = payload.get("type")
     data = payload.get("data", {})
 
+    event = None
     if type_ == "Issue" and action == "create":
-        await pipeline.run(issue_to_event(data, tenant_id))
-
+        event = issue_to_event(data, tenant_id)
     elif type_ == "Comment" and action == "create":
-        await pipeline.run(comment_to_event(data, data.get("issue", {}), tenant_id))
-
+        event = comment_to_event(data, data.get("issue", {}), tenant_id)
     elif type_ == "IssueHistory" and action == "create":
         event = state_change_to_event(data, data.get("issue", {}), tenant_id)
-        if event:
-            await pipeline.run(event)
+
+    if event:
+        await get_arq_pool().enqueue_job("process_event", event.model_dump(mode="json"))

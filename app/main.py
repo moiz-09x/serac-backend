@@ -9,9 +9,11 @@ from app.connectors.slack import backfill as slack_backfill
 from app.connectors.slack import socket as slack_socket
 from app.core.config import settings
 from app.db import (
+    close_arq_pool,
     close_driver,
     close_engine,
     close_pool,
+    init_arq_pool,
     init_driver,
     init_engine,
     init_pool,
@@ -23,9 +25,11 @@ async def lifespan(app: FastAPI):
     await init_driver()
     await init_engine()
     await init_pool()
+    await init_arq_pool()
     await slack_socket.start()
     yield
     await slack_socket.stop()
+    await close_arq_pool()
     await close_pool()
     await close_engine()
     await close_driver()
