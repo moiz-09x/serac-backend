@@ -55,6 +55,7 @@ def page_to_event(page: dict, text_content: str, tenant_id: uuid.UUID) -> Canoni
             tenant_id=tenant_id,
             source_platform=SourcePlatform.NOTION,
             native_event_id=page["id"],
+            platform_thread_id=page["id"],
             timestamp=_ts(page["created_time"]),
             event_type="PageCreated",
         ),
@@ -71,9 +72,8 @@ def page_updated_to_event(page: dict, text_content: str, tenant_id: uuid.UUID) -
         metadata=EventMetadata(
             tenant_id=tenant_id,
             source_platform=SourcePlatform.NOTION,
-            # composite ID ensures each edit is a distinct, deduplicated event
             native_event_id=f"{page['id']}_{page['last_edited_time']}",
-            parent_native_id=page["id"],
+            platform_thread_id=page["id"],
             timestamp=_ts(page["last_edited_time"]),
             event_type="PageUpdated",
         ),
@@ -90,7 +90,7 @@ def comment_to_event(comment: dict, page: dict, tenant_id: uuid.UUID) -> Canonic
             tenant_id=tenant_id,
             source_platform=SourcePlatform.NOTION,
             native_event_id=comment["id"],
-            parent_native_id=page["id"],
+            platform_thread_id=page["id"],
             timestamp=_ts(comment["created_time"]),
             event_type="CommentAdded",
         ),

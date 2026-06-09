@@ -15,6 +15,7 @@ from .enums import (
 )
 
 
+
 def _now_utc() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -54,6 +55,10 @@ class Event(NodeBase):
 class Thread(NodeBase):
     status: ThreadStatus = ThreadStatus.ACTIVE
     resolved_at: datetime | None = None
+    source_platform: SourcePlatform | None = None
+    platform_native_id: str | None = None
+    title: str | None = None
+    anchor_event_type: str | None = None
 
 
 class GoverningDoc(NodeBase):
@@ -68,6 +73,10 @@ class GoverningDoc(NodeBase):
 class Outcome(NodeBase):
     type: OutcomeType
     duration_ms: int | None = None
+    summary: str | None = None
+    contributing_thread_count: int = 0
+    trigger_platform: SourcePlatform | None = None
+    trigger_native_id: str | None = None
 
 
 class Client(NodeBase):

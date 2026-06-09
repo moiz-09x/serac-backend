@@ -53,18 +53,20 @@ class Settings(BaseSettings):
     # ── Embedding (local, via fastembed — no API key needed) ──────────────────
     embedding_model: str = "BAAI/bge-small-en-v1.5"
     embedding_dim: int = 384
-    thread_attach_threshold: float = 0.65
     retrieval_min_score: float = 0.72
 
-    # ── Thread-stitch LLM judge ───────────────────────────────────────────────
-    stitch_llm_provider: str = "deepseek"
-    stitch_llm_model: str = "deepseek-chat"
-    # Scores at or above this are trusted directly; below → ambiguous zone
-    stitch_ambiguity_hi: float = 0.80
-    # If top-2 candidates are within this gap, call LLM even above ambiguity_hi
-    stitch_tie_gap: float = 0.05
-    # Max events fetched per candidate thread for LLM context
-    stitch_expand_limit: int = 10
+    # ── Thread-relation LLM judge (used by background thread linker) ─────────
+    thread_relation_provider: str = "deepseek"
+    thread_relation_model: str = "deepseek-chat"
+
+    # ── Thread linking thresholds ─────────────────────────────────────────────
+    # Scores at or above hi → create RELATES_TO directly (no LLM needed)
+    thread_link_hi_threshold: float = 0.85
+    # Scores between lo and hi → escalate to LLM judge
+    thread_link_lo_threshold: float = 0.72
+
+    # ── Thread status helpers ─────────────────────────────────────────────────
+    thread_status_concluded: str = "Concluded"
 
 
 settings = Settings()

@@ -2,8 +2,9 @@ from arq import cron
 from arq.connections import RedisSettings
 
 from app.core.config import settings
-from app.db import close_driver, close_engine, close_pool, init_driver, init_engine, init_pool
+from app.db import close_arq_pool, close_driver, close_engine, close_pool, init_arq_pool, init_driver, init_engine, init_pool
 from app.extraction import pipeline
+from app.extraction.thread_linker import link_related_threads
 from app.schemas import CanonicalEvent
 from app.schemas.enums import ThreadStatus
 
@@ -36,16 +37,18 @@ async def startup(ctx: dict) -> None:
     await init_driver()
     await init_engine()
     await init_pool()
+    await init_arq_pool()
 
 
 async def shutdown(ctx: dict) -> None:
+    await close_arq_pool()
     await close_pool()
     await close_engine()
     await close_driver()
 
 
 class WorkerSettings:
-    functions = [process_event, mark_stalled_threads]
+    functions = [process_event, mark_stalled_threads, link_related_threads]
     cron_jobs = [cron(mark_stalled_threads, hour=2, minute=0)]
     on_startup = startup
     on_shutdown = shutdown

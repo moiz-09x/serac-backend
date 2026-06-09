@@ -17,6 +17,12 @@ class ThreadContext(TypedDict):
     events: list[dict]
 
 
+class TokenUsage(TypedDict):
+    input_tokens: int
+    output_tokens: int
+    total_tokens: int
+
+
 class RetrievalState(TypedDict):
     question: str
     tenant_id: str
@@ -27,3 +33,4 @@ class RetrievalState(TypedDict):
     context_items: list[ContextItem]
     draft_answer: str
     answer: str
+    token_usage: TokenUsage

@@ -24,6 +24,29 @@ async def init_driver() -> None:
             """,
             dims=settings.embedding_dim,
         )
+        await session.run(
+            """
+            CREATE VECTOR INDEX thread_embeddings IF NOT EXISTS
+            FOR (t:Thread) ON (t.embedding)
+            OPTIONS {indexConfig: {
+                `vector.dimensions`: $dims,
+                `vector.similarity_function`: 'cosine'
+            }}
+            """,
+            dims=settings.embedding_dim,
+        )
+        await session.run(
+            """
+            CREATE INDEX thread_platform_native IF NOT EXISTS
+            FOR (t:Thread) ON (t.tenant_id, t.source_platform, t.platform_native_id)
+            """
+        )
+        await session.run(
+            """
+            CREATE INDEX relates_to_confidence IF NOT EXISTS
+            FOR ()-[r:RELATES_TO]-() ON (r.confidence)
+            """
+        )
 
 
 async def close_driver() -> None:
