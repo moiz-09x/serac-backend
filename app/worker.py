@@ -50,7 +50,6 @@ log = logging.getLogger(__name__)
 async def refresh_expiring_tokens(ctx: dict) -> None:
     """Refresh OAuth tokens expiring within the next hour."""
     from app.connectors.credentials import credentials
-    from app.connectors.crypto import decrypt
 
     expiring = await credentials.get_expiring(within_seconds=3600)
     for cred in expiring:

@@ -1,7 +1,7 @@
 """CredentialProvider — single access point for integration tokens."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import delete, select, text
 from sqlalchemy.dialects.postgresql import insert
@@ -41,7 +41,7 @@ class CredentialProvider:
     ) -> None:
         from app.db.postgres import get_engine
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         values = {
             "tenant_id": tenant_id,
             "integration": integration,
@@ -98,7 +98,7 @@ class CredentialProvider:
         """Return credentials expiring within the given window (for token refresh job)."""
         from app.db.postgres import get_engine
 
-        cutoff = datetime.now(timezone.utc).timestamp() + within_seconds
+        cutoff = datetime.now(UTC).timestamp() + within_seconds
         async with get_engine().connect() as conn:
             rows = await conn.execute(
                 select(IntegrationCredential).where(
