@@ -118,8 +118,7 @@ async def expand(state: RetrievalState) -> dict:
             MATCH (t:Thread {id: tid, tenant_id: $tenant})
             OPTIONAL MATCH (e:Event)-[:PART_OF]->(t)
             OPTIONAL MATCH (a:Actor)-[:EXECUTED]->(e)
-            OPTIONAL MATCH (t)-[:RESULTED_IN]->(o:Outcome)
-            WITH t, o,
+            WITH t,
                  collect(distinct {
                      id: e.id,
                      type: e.event_type,
@@ -135,8 +134,6 @@ async def expand(state: RetrievalState) -> dict:
                    t.title          AS title,
                    t.created_at     AS created_at,
                    t.resolved_at    AS resolved_at,
-                   o.type           AS outcome_type,
-                   o.summary        AS outcome_summary,
                    events
             """,
             thread_ids=all_thread_ids,
@@ -154,7 +151,6 @@ async def expand(state: RetrievalState) -> dict:
                     status=row["status"] or "Unknown",
                     created_at=row["created_at"] or "",
                     resolved_at=row["resolved_at"],
-                    outcome_type=row["outcome_type"],
                     events=events,
                 )
             )
@@ -194,8 +190,6 @@ async def synthesise(state: RetrievalState) -> dict:
             header_parts.append(f"Started: {tc['created_at'][:10]}")
         if tc["resolved_at"]:
             header_parts.append(f"Resolved: {tc['resolved_at'][:10]}")
-        if tc["outcome_type"]:
-            header_parts.append(f"Outcome: {tc['outcome_type']}")
         header_parts.append("===")
 
         lines = [" | ".join(header_parts)]
@@ -221,7 +215,7 @@ async def synthesise(state: RetrievalState) -> dict:
         "An uncited claim is always better than a wrong citation — do not guess.\n"
         "2. Events within the same Thread block belong to the same conversation or issue.\n"
         "3. Threads from different platforms may be about the same subject — treat them as one body of work.\n"
-        "4. The thread header tells you its status, when it started, when it resolved, and its outcome.\n"
+        "4. The thread header tells you its status, when it started, and when it resolved.\n"
         "5. Do not use any knowledge outside the context below.\n"
         "6. If the context does not contain enough information, say so explicitly.\n\n"
         f"Context:\n{context_block}\n\n"

@@ -3,7 +3,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field
 
-from .enums import OutcomeType, PrincipalType, SourcePlatform, Visibility
+from .enums import PrincipalType, SourcePlatform, Visibility
 
 
 class AccessScopeItem(BaseModel):
@@ -43,4 +43,3 @@ class CanonicalEvent(BaseModel):
     actor_signature: ActorSignature
     delta_payload: DeltaPayload
     access_scope: list[AccessScopeItem] = Field(default_factory=list)
-    outcome_signal: OutcomeType | None = None  # set by normaliser when event is a terminal state

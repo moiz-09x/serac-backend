@@ -39,7 +39,7 @@ async def get_graph():
             """
             MATCH (n)
             WHERE n.tenant_id = $tenant_id
-              AND (n:Actor OR n:Thread OR n:Event OR n:Outcome)
+              AND (n:Actor OR n:Thread OR n:Event)
             WITH n, labels(n)[0] AS lbl
             RETURN
               n.id              AS id,
@@ -47,7 +47,6 @@ async def get_graph():
               n.name            AS name,
               n.title           AS title,
               n.event_type      AS event_type,
-              n.type            AS outcome_type,
               n.source_platform AS platform
             ORDER BY n.created_at DESC
             LIMIT 300
@@ -59,13 +58,7 @@ async def get_graph():
             if not nid:
                 continue
             ntype = row["type"] or "Event"
-            label = (
-                row.get("name")
-                or row.get("title")
-                or row.get("event_type")
-                or row.get("outcome_type")
-                or str(nid)[:8]
-            )
+            label = row.get("name") or row.get("title") or row.get("event_type") or str(nid)[:8]
             nodes.append(GraphNode(id=str(nid), type=ntype, label=label, platform=row["platform"]))
             node_ids.add(str(nid))
 

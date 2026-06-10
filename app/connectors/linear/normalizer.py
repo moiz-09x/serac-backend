@@ -8,14 +8,10 @@ from app.schemas import (
     DeltaPayload,
     EventMetadata,
     FieldMutation,
-    OutcomeType,
     PrincipalType,
     SourcePlatform,
     Visibility,
 )
-
-_COMPLETED_STATES = {"done", "completed", "fixed", "resolved"}
-_CANCELLED_STATES = {"cancelled", "canceled", "duplicate", "won't fix", "wont fix", "wontfix"}
 
 
 def _scope(team: dict) -> AccessScopeItem:
@@ -77,15 +73,6 @@ def state_change_to_event(
     if not history.get("fromState") or not history.get("toState"):
         return None
     actor = history.get("actor") or {}
-    to_state = history["toState"]["name"].lower()
-
-    if to_state in _COMPLETED_STATES:
-        outcome_signal = OutcomeType.COMPLETED
-    elif to_state in _CANCELLED_STATES:
-        outcome_signal = OutcomeType.CANCELLED
-    else:
-        outcome_signal = None
-
     return CanonicalEvent(
         metadata=EventMetadata(
             tenant_id=tenant_id,
@@ -109,5 +96,4 @@ def state_change_to_event(
             ]
         ),
         access_scope=[_scope(issue["team"])],
-        outcome_signal=outcome_signal,
     )
