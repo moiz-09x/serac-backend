@@ -94,6 +94,7 @@ async def _handle_notion(payload: dict) -> None:
         return
 
     from app.connectors.credentials import credentials as cred_store
+
     try:
         notion_token = await cred_store.get_token(str(tenant_id), "notion")
     except LookupError:

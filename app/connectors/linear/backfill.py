@@ -56,6 +56,7 @@ async def _resolve_token(tenant_id: uuid.UUID, api_key: str | None) -> str:
     if api_key:
         return api_key
     from app.connectors.credentials import credentials
+
     return await credentials.get_token(str(tenant_id), "linear")
 
 

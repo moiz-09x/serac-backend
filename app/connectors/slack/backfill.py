@@ -12,6 +12,7 @@ log = logging.getLogger(__name__)
 
 async def _resolve_token(tenant_id: uuid.UUID) -> str | None:
     from app.connectors.credentials import credentials as cred_store
+
     try:
         return await cred_store.get_token(str(tenant_id), "slack")
     except LookupError:

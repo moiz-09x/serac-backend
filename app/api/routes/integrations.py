@@ -47,6 +47,7 @@ async def disconnect(integration: str, tenant_id: str):
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
+
 def _check(integration: str) -> None:
     if integration not in _SUPPORTED:
         raise HTTPException(status_code=404, detail=f"Unknown integration: {integration}")
@@ -55,20 +56,26 @@ def _check(integration: str) -> None:
 def _authorize_url(integration: str, tenant_id: str) -> str:
     if integration == "notion":
         from app.connectors.notion.oauth import authorize_url
+
         return authorize_url(tenant_id)
     if integration == "linear":
         from app.connectors.linear.oauth import authorize_url
+
         return authorize_url(tenant_id)
     from app.connectors.slack.oauth import authorize_url
+
     return authorize_url(tenant_id)
 
 
 async def _handle_callback(integration: str, code: str, state: str) -> str:
     if integration == "notion":
         from app.connectors.notion.oauth import handle_callback
+
         return await handle_callback(code, state)
     if integration == "linear":
         from app.connectors.linear.oauth import handle_callback
+
         return await handle_callback(code, state)
     from app.connectors.slack.oauth import handle_callback
+
     return await handle_callback(code, state)

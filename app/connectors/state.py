@@ -1,4 +1,5 @@
 """HMAC-signed OAuth state parameter to prevent CSRF attacks."""
+
 import hashlib
 import hmac
 import json

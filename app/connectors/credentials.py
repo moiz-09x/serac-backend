@@ -1,4 +1,5 @@
 """CredentialProvider — single access point for integration tokens."""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
