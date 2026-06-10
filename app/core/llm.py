@@ -37,5 +37,3 @@ def synthesis_llm() -> ChatOpenAI:
 
 def thread_relation_llm() -> ChatOpenAI:
     return build_llm(settings.thread_relation_provider, settings.thread_relation_model)
-
-

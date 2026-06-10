@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from app.connectors.slack.client import get_user_email, get_web_client
 from app.connectors.slack.normalizer import message_to_event
@@ -12,7 +12,7 @@ log = logging.getLogger(__name__)
 
 async def run(tenant_id: uuid.UUID) -> None:
     client = get_web_client()
-    cutoff = str((datetime.now(timezone.utc) - timedelta(days=365)).timestamp())
+    cutoff = str((datetime.now(UTC) - timedelta(days=365)).timestamp())
 
     resp = await client.conversations_list(types="public_channel,private_channel", limit=200)
     channels = resp["channels"]

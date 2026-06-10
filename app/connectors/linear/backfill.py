@@ -1,6 +1,6 @@
 import asyncio
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from app.connectors.linear.client import LinearClient
 from app.connectors.linear.normalizer import (
@@ -53,7 +53,7 @@ query($teamId: ID!, $after: String, $createdAfter: DateTimeOrDuration) {
 
 
 async def run(tenant_id: uuid.UUID, api_key: str) -> None:
-    cutoff = (datetime.now(timezone.utc) - timedelta(days=365)).isoformat()
+    cutoff = (datetime.now(UTC) - timedelta(days=365)).isoformat()
     async with LinearClient(api_key) as client:
         data = await client.query(_TEAMS_QUERY)
         for team in data["teams"]["nodes"]:

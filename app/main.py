@@ -5,8 +5,6 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-logging.basicConfig(level=logging.INFO)
-
 from app.api.routes import health, webhooks
 from app.api.routes.graph import router as graph_router
 from app.api.routes.query import router as query_router
@@ -25,6 +23,8 @@ from app.db import (
     init_engine,
     init_pool,
 )
+
+logging.basicConfig(level=logging.INFO)
 
 
 @asynccontextmanager
@@ -70,6 +70,7 @@ def root() -> dict[str, str]:
 @app.post("/admin/backfill/linear")
 async def trigger_linear_backfill():
     import asyncio
+
     asyncio.create_task(linear_backfill.run(uuid.UUID(settings.tenant_id), settings.linear_api_key))
     return {"status": "linear backfill started"}
 
@@ -77,6 +78,7 @@ async def trigger_linear_backfill():
 @app.post("/admin/backfill/slack")
 async def trigger_slack_backfill():
     import asyncio
+
     asyncio.create_task(slack_backfill.run(uuid.UUID(settings.tenant_id)))
     return {"status": "slack backfill started"}
 
@@ -84,7 +86,6 @@ async def trigger_slack_backfill():
 @app.post("/admin/backfill/notion")
 async def trigger_notion_backfill():
     import asyncio
+
     asyncio.create_task(notion_backfill.run(uuid.UUID(settings.tenant_id), settings.notion_api_key))
     return {"status": "notion backfill started"}
-
-

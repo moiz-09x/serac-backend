@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from app.connectors.notion.client import NotionClient
 from app.connectors.notion.normalizer import comment_to_event, page_to_event
@@ -9,11 +9,21 @@ from app.extraction import pipeline
 
 log = logging.getLogger(__name__)
 
-_TEXT_BLOCK_TYPES = frozenset({
-    "paragraph", "heading_1", "heading_2", "heading_3",
-    "bulleted_list_item", "numbered_list_item", "toggle",
-    "quote", "callout", "code", "to_do",
-})
+_TEXT_BLOCK_TYPES = frozenset(
+    {
+        "paragraph",
+        "heading_1",
+        "heading_2",
+        "heading_3",
+        "bulleted_list_item",
+        "numbered_list_item",
+        "toggle",
+        "quote",
+        "callout",
+        "code",
+        "to_do",
+    }
+)
 
 _SLEEP = 0.35  # ~3 req/s — Notion's documented rate limit
 
@@ -46,7 +56,7 @@ async def extract_page_text(client: NotionClient, block_id: str, depth: int = 0)
 
 
 async def run(tenant_id: uuid.UUID, api_key: str) -> None:
-    cutoff = datetime.now(timezone.utc) - timedelta(days=365)
+    cutoff = datetime.now(UTC) - timedelta(days=365)
     async with NotionClient(api_key) as client:
         await _backfill_pages(client, tenant_id, cutoff)
 

@@ -22,13 +22,13 @@ from .graph import (
     Actor,
     Client,
     Deal,
-    Thread,
     Event,
     GoverningDoc,
     Group,
     NodeBase,
     Outcome,
     Repo,
+    Thread,
 )
 
 __all__ = [

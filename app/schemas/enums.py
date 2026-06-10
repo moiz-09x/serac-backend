@@ -1,7 +1,7 @@
-from enum import Enum
+from enum import StrEnum
 
 
-class SourcePlatform(str, Enum):
+class SourcePlatform(StrEnum):
     SLACK = "Slack"
     HUBSPOT = "HubSpot"
     SALESFORCE = "Salesforce"
@@ -9,13 +9,13 @@ class SourcePlatform(str, Enum):
     NOTION = "Notion"
 
 
-class ThreadStatus(str, Enum):
+class ThreadStatus(StrEnum):
     ACTIVE = "Active"
     CONCLUDED = "Concluded"
     STALLED = "Stalled"
 
 
-class GoverningDocType(str, Enum):
+class GoverningDocType(StrEnum):
     SOW = "SOW"
     INTERNAL_POLICY = "InternalPolicy"
     EXTERNAL_REGULATION = "ExternalRegulation"
@@ -23,7 +23,7 @@ class GoverningDocType(str, Enum):
     ACTIVE_RULE = "ActiveRule"
 
 
-class GoverningDocStatus(str, Enum):
+class GoverningDocStatus(StrEnum):
     PENDING = "Pending"
     APPROVED = "Approved"
     REJECTED = "Rejected"
@@ -31,14 +31,14 @@ class GoverningDocStatus(str, Enum):
     RETIRED = "Retired"
 
 
-class OutcomeType(str, Enum):
+class OutcomeType(StrEnum):
     COMPLETED = "Completed"
     CANCELLED = "Cancelled"
     DEAL_WON = "DealWon"
     DEAL_LOST = "DealLost"
 
 
-class PrincipalType(str, Enum):
+class PrincipalType(StrEnum):
     SLACK_CHANNEL = "SlackChannel"
     LINEAR_TEAM = "LinearTeam"
     HUBSPOT_PIPELINE = "HubSpotPipeline"
@@ -46,24 +46,24 @@ class PrincipalType(str, Enum):
     SALESFORCE_ROLE = "SalesforceRole"
 
 
-class Visibility(str, Enum):
+class Visibility(StrEnum):
     PUBLIC = "public"
     PRIVATE = "private"
     RESTRICTED = "restricted"
 
 
-class ActorStatus(str, Enum):
+class ActorStatus(StrEnum):
     VERIFIED = "Verified"
     UNVERIFIED = "Unverified"
 
 
-class GroupKind(str, Enum):
+class GroupKind(StrEnum):
     CHANNEL = "channel"
     TEAM = "team"
     ROLE = "role"
 
 
-class SemanticEnrichment(str, Enum):
+class SemanticEnrichment(StrEnum):
     COMPLETE = "Complete"
     FAILED = "Failed"
     PENDING = "Pending"

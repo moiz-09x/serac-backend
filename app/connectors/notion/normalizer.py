@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from app.schemas import (
     AccessScopeItem,
@@ -16,7 +16,7 @@ from app.schemas import (
 def _ts(iso: str) -> datetime:
     dt = datetime.fromisoformat(iso.replace("Z", "+00:00"))
     if dt.tzinfo is None:
-        return dt.replace(tzinfo=timezone.utc)
+        return dt.replace(tzinfo=UTC)
     return dt
 
 

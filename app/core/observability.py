@@ -15,6 +15,7 @@ def get_langfuse():
         return None
     try:
         from langfuse import Langfuse
+
         _langfuse = Langfuse(
             public_key=settings.langfuse_public_key,
             secret_key=settings.langfuse_secret_key,

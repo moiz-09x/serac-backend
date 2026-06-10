@@ -34,7 +34,7 @@ class EventMetadata(BaseModel):
     native_event_id: str
     timestamp: datetime
     event_type: str
-    platform_thread_id: str              # native ID of the thread this event belongs to
+    platform_thread_id: str  # native ID of the thread this event belongs to
 
 
 class CanonicalEvent(BaseModel):

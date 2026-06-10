@@ -147,33 +147,39 @@ async def expand(state: RetrievalState) -> dict:
             thread_id = row["thread_id"]
             events = [e for e in (row["events"] or []) if e.get("id")]
 
-            thread_contexts.append(ThreadContext(
-                thread_id=thread_id,
-                platform=row["platform"] or "",
-                status=row["status"] or "Unknown",
-                created_at=row["created_at"] or "",
-                resolved_at=row["resolved_at"],
-                outcome_type=row["outcome_type"],
-                events=events,
-            ))
+            thread_contexts.append(
+                ThreadContext(
+                    thread_id=thread_id,
+                    platform=row["platform"] or "",
+                    status=row["status"] or "Unknown",
+                    created_at=row["created_at"] or "",
+                    resolved_at=row["resolved_at"],
+                    outcome_type=row["outcome_type"],
+                    events=events,
+                )
+            )
 
             for ev in events:
                 if ev["id"] in seen_event_ids:
                     continue
                 seen_event_ids.add(ev["id"])
 
-                parts = [f"{ev.get('actor', 'Unknown')} — {ev.get('type', '')} at {ev.get('ts', '')}"]
+                parts = [
+                    f"{ev.get('actor', 'Unknown')} — {ev.get('type', '')} at {ev.get('ts', '')}"
+                ]
                 if ev.get("text"):
                     parts.append(ev["text"])
                 if ev.get("fields"):
                     parts.append(", ".join(ev["fields"]))
 
-                context_items.append(ContextItem(
-                    source_id=f"event:{ev['id']}",
-                    type="event",
-                    content=" | ".join(parts),
-                    thread_id=thread_id,
-                ))
+                context_items.append(
+                    ContextItem(
+                        source_id=f"event:{ev['id']}",
+                        type="event",
+                        content=" | ".join(parts),
+                        thread_id=thread_id,
+                    )
+                )
 
     return {"thread_contexts": thread_contexts, "context_items": context_items}
 
@@ -224,16 +230,55 @@ async def synthesise(state: RetrievalState) -> dict:
     response = await synthesis_llm().ainvoke(prompt)
     usage = _extract_usage(response)
     log.info("synthesise tokens: in=%d out=%d", usage["input_tokens"], usage["output_tokens"])
-    accumulated = _add_usage(state.get("token_usage") or TokenUsage(input_tokens=0, output_tokens=0, total_tokens=0), usage)
-    log.info("retrieval total tokens: in=%d out=%d total=%d", accumulated["input_tokens"], accumulated["output_tokens"], accumulated["total_tokens"])
+    accumulated = _add_usage(
+        state.get("token_usage") or TokenUsage(input_tokens=0, output_tokens=0, total_tokens=0),
+        usage,
+    )
+    log.info(
+        "retrieval total tokens: in=%d out=%d total=%d",
+        accumulated["input_tokens"],
+        accumulated["output_tokens"],
+        accumulated["total_tokens"],
+    )
     return {"draft_answer": response.content, "token_usage": accumulated}
 
 
 _VERIFY_STOP_WORDS = {
-    "that", "this", "with", "from", "have", "been", "they", "their", "them",
-    "will", "would", "could", "should", "also", "both", "into", "than", "then",
-    "when", "which", "what", "about", "being", "used", "using", "were", "some",
-    "each", "only", "more", "said", "were", "just", "very", "there",
+    "that",
+    "this",
+    "with",
+    "from",
+    "have",
+    "been",
+    "they",
+    "their",
+    "them",
+    "will",
+    "would",
+    "could",
+    "should",
+    "also",
+    "both",
+    "into",
+    "than",
+    "then",
+    "when",
+    "which",
+    "what",
+    "about",
+    "being",
+    "used",
+    "using",
+    "were",
+    "some",
+    "each",
+    "only",
+    "more",
+    "said",
+    "were",
+    "just",
+    "very",
+    "there",
 }
 
 
@@ -276,8 +321,7 @@ async def verify(state: RetrievalState) -> dict:
             window = answer[window_start:window_end]
             claim_text = re.sub(r"\[[^\]]+\]", "", window).lower()
             claim_words = {
-                w for w in re.findall(r"\b[a-z]{4,}\b", claim_text)
-                if w not in _VERIFY_STOP_WORDS
+                w for w in re.findall(r"\b[a-z]{4,}\b", claim_text) if w not in _VERIFY_STOP_WORDS
             }
             if claim_words and not (claim_words & event_words):
                 answer = answer.replace(f"[{canonical_id}]", "")

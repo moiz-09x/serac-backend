@@ -1,8 +1,8 @@
 import asyncio
 import uuid
 
-from slack_bolt.async_app import AsyncApp
 from slack_bolt.adapter.socket_mode.async_handler import AsyncSocketModeHandler
+from slack_bolt.async_app import AsyncApp
 
 from app.connectors.slack.client import get_user_email, get_web_client
 from app.connectors.slack.normalizer import message_to_event

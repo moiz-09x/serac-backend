@@ -1,7 +1,7 @@
 import json
 import logging
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from app.core.config import settings
 from app.db import get_driver
@@ -44,7 +44,8 @@ async def link_related_threads(ctx: dict, thread_id: str, tenant_id: str) -> Non
             MATCH (t:Thread {id: $tid, tenant_id: $tenant})
             RETURN t.embedding AS emb, t.source_platform AS platform, t.title AS title
             """,
-            tid=thread_id, tenant=tenant_id,
+            tid=thread_id,
+            tenant=tenant_id,
         )
         record = await result.single()
         if not record or not record["emb"]:
@@ -87,17 +88,23 @@ async def link_related_threads(ctx: dict, thread_id: str, tenant_id: str) -> Non
 
         if score >= settings.thread_link_hi_threshold:
             # Clear hit — trust cosine directly
-            await _write_relates_to(thread_id, candidate_id, tenant_id, confidence=score, source="semantic")
+            await _write_relates_to(
+                thread_id, candidate_id, tenant_id, confidence=score, source="semantic"
+            )
             log.info(
                 "thread_linker: direct link %s → %s (score=%.3f)",
-                thread_id, candidate_id, score,
+                thread_id,
+                candidate_id,
+                score,
             )
 
         elif score >= settings.thread_link_lo_threshold:
             # Ambiguous zone — escalate to LLM judge
             log.info(
                 "thread_linker: ambiguous score=%.3f for %s → %s, calling LLM judge",
-                score, thread_id, candidate_id,
+                score,
+                thread_id,
+                candidate_id,
             )
             related, reason = await _thread_relation_judge(
                 thread_id=thread_id,
@@ -109,15 +116,21 @@ async def link_related_threads(ctx: dict, thread_id: str, tenant_id: str) -> Non
                 tenant_id=tenant_id,
             )
             if related:
-                await _write_relates_to(thread_id, candidate_id, tenant_id, confidence=score, source="semantic")
+                await _write_relates_to(
+                    thread_id, candidate_id, tenant_id, confidence=score, source="semantic"
+                )
                 log.info(
                     "thread_linker: LLM confirmed link %s → %s (%s)",
-                    thread_id, candidate_id, reason,
+                    thread_id,
+                    candidate_id,
+                    reason,
                 )
             else:
                 log.info(
                     "thread_linker: LLM rejected link %s → %s (%s)",
-                    thread_id, candidate_id, reason,
+                    thread_id,
+                    candidate_id,
+                    reason,
                 )
 
 
@@ -128,7 +141,7 @@ async def _write_relates_to(
     confidence: float,
     source: str,
 ) -> None:
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     async with get_driver().session(database=settings.neo4j_database) as session:
         # MERGE so we don't create duplicates; only update if new confidence is higher
         # Always MERGE with IDs in sorted order so concurrent jobs produce the same
@@ -144,8 +157,12 @@ async def _write_relates_to(
                 r.confidence = CASE WHEN $conf > r.confidence THEN $conf ELSE r.confidence END,
                 r.linked_at = CASE WHEN $conf > r.confidence THEN $now ELSE r.linked_at END
             """,
-            aid=a, bid=b, tid=tenant_id,
-            conf=confidence, src=source, now=now,
+            aid=a,
+            bid=b,
+            tid=tenant_id,
+            conf=confidence,
+            src=source,
+            now=now,
         )
 
 
@@ -160,26 +177,27 @@ async def _fetch_thread_events(thread_id: str, tenant_id: str, limit: int = 8) -
             ORDER BY e.timestamp DESC
             LIMIT $lim
             """,
-            tid=thread_id, tenant=tenant_id, lim=limit,
+            tid=thread_id,
+            tenant=tenant_id,
+            lim=limit,
         )
         rows = []
         async for row in result:
-            rows.append({
-                "actor": row["actor"] or "Unknown",
-                "etype": row["etype"] or "",
-                "ts": row["ts"] or "",
-                "text": (row["text"] or "")[:200],
-            })
+            rows.append(
+                {
+                    "actor": row["actor"] or "Unknown",
+                    "etype": row["etype"] or "",
+                    "ts": row["ts"] or "",
+                    "text": (row["text"] or "")[:200],
+                }
+            )
         return list(reversed(rows))
 
 
 def _format_events(events: list[dict]) -> str:
     if not events:
         return "  (no events)"
-    return "\n".join(
-        f"  [{e['actor']}] {e['etype']} at {e['ts']}: {e['text']}"
-        for e in events
-    )
+    return "\n".join(f"  [{e['actor']}] {e['etype']} at {e['ts']}: {e['text']}" for e in events)
 
 
 async def _thread_relation_judge(
@@ -222,7 +240,9 @@ async def _thread_relation_judge(
     latency_ms = int((time.monotonic() - t0) * 1000)
     log.info(
         "thread_relation_judge: latency=%dms related=%s reason=%r",
-        latency_ms, related, reason,
+        latency_ms,
+        related,
+        reason,
     )
     _trace_relation_judge(
         thread_id=thread_id,
@@ -251,6 +271,7 @@ def _trace_relation_judge(
 ) -> None:
     try:
         from app.core.observability import get_langfuse
+
         lf = get_langfuse()
         if not lf:
             return

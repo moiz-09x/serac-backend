@@ -2,7 +2,16 @@ from arq import cron
 from arq.connections import RedisSettings
 
 from app.core.config import settings
-from app.db import close_arq_pool, close_driver, close_engine, close_pool, init_arq_pool, init_driver, init_engine, init_pool
+from app.db import (
+    close_arq_pool,
+    close_driver,
+    close_engine,
+    close_pool,
+    init_arq_pool,
+    init_driver,
+    init_engine,
+    init_pool,
+)
 from app.extraction import pipeline
 from app.extraction.thread_linker import link_related_threads
 from app.schemas import CanonicalEvent
@@ -14,10 +23,10 @@ async def process_event(ctx: dict, event_data: dict) -> None:
     await pipeline.run(event)
 
 
-
 async def mark_stalled_threads(ctx: dict) -> None:
     """Mark Active threads with no event activity in the last 30 days as Stalled."""
     from app.db import get_driver
+
     async with get_driver().session(database=settings.neo4j_database) as session:
         await session.run(
             """

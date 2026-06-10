@@ -42,6 +42,7 @@ async def query(request: QueryRequest):
         if lf:
             try:
                 from langfuse.langchain import CallbackHandler
+
                 config = {"callbacks": [CallbackHandler()]}
             except Exception as e:
                 logger.warning("Langfuse callback handler failed: %s", e)
@@ -93,30 +94,36 @@ async def query_stream(request: QueryRequest):
         try:
             yield emit({"stage": "decompose", "status": "running"})
             state.update(await decompose(state))
-            yield emit({"stage": "decompose", "status": "done", "sub_queries": state["sub_queries"]})
+            yield emit(
+                {"stage": "decompose", "status": "done", "sub_queries": state["sub_queries"]}
+            )
 
             yield emit({"stage": "search", "status": "running"})
             state.update(await search(state))
-            yield emit({
-                "stage": "search",
-                "status": "done",
-                "matched_thread_ids": state["matched_thread_ids"],
-                "thread_scores": state["thread_scores"],
-            })
+            yield emit(
+                {
+                    "stage": "search",
+                    "status": "done",
+                    "matched_thread_ids": state["matched_thread_ids"],
+                    "thread_scores": state["thread_scores"],
+                }
+            )
 
             yield emit({"stage": "expand", "status": "running"})
             state.update(await expand(state))
-            yield emit({
-                "stage": "expand",
-                "status": "done",
-                "expanded_thread_ids": [tc["thread_id"] for tc in state["thread_contexts"]],
-                "event_ids": [
-                    item["source_id"].split(":", 1)[1]
-                    for item in state["context_items"]
-                    if ":" in item["source_id"]
-                ],
-                "event_count": len(state["context_items"]),
-            })
+            yield emit(
+                {
+                    "stage": "expand",
+                    "status": "done",
+                    "expanded_thread_ids": [tc["thread_id"] for tc in state["thread_contexts"]],
+                    "event_ids": [
+                        item["source_id"].split(":", 1)[1]
+                        for item in state["context_items"]
+                        if ":" in item["source_id"]
+                    ],
+                    "event_count": len(state["context_items"]),
+                }
+            )
 
             yield emit({"stage": "synthesize", "status": "running"})
             state.update(await synthesise(state))
@@ -134,19 +141,21 @@ async def query_stream(request: QueryRequest):
                         continue
                     text = ev.get("text") or ""
                     citations[f"event:{ev['id']}"] = {
-                        "actor":      ev.get("actor") or "Unknown",
-                        "platform":   tc_platform,
+                        "actor": ev.get("actor") or "Unknown",
+                        "platform": tc_platform,
                         "event_type": ev.get("type") or "",
-                        "timestamp":  str(ev.get("ts") or "")[:10],
-                        "text":       text[:300].strip(),
+                        "timestamp": str(ev.get("ts") or "")[:10],
+                        "text": text[:300].strip(),
                     }
 
-            yield emit({
-                "stage": "result",
-                "status": "done",
-                "answer": state["answer"],
-                "citations": citations,
-            })
+            yield emit(
+                {
+                    "stage": "result",
+                    "status": "done",
+                    "answer": state["answer"],
+                    "citations": citations,
+                }
+            )
 
         except Exception as exc:
             logger.exception("stream query failed")

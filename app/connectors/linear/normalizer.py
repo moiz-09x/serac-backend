@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime
 
 from app.schemas import (
     AccessScopeItem,
@@ -71,7 +71,9 @@ def comment_to_event(comment: dict, issue: dict, tenant_id: uuid.UUID) -> Canoni
     )
 
 
-def state_change_to_event(history: dict, issue: dict, tenant_id: uuid.UUID) -> CanonicalEvent | None:
+def state_change_to_event(
+    history: dict, issue: dict, tenant_id: uuid.UUID
+) -> CanonicalEvent | None:
     if not history.get("fromState") or not history.get("toState"):
         return None
     actor = history.get("actor") or {}
@@ -98,11 +100,13 @@ def state_change_to_event(history: dict, issue: dict, tenant_id: uuid.UUID) -> C
             email_hint=actor.get("email"),
         ),
         delta_payload=DeltaPayload(
-            field_mutations=[FieldMutation(
-                field="status",
-                old=history["fromState"]["name"],
-                new=history["toState"]["name"],
-            )]
+            field_mutations=[
+                FieldMutation(
+                    field="status",
+                    old=history["fromState"]["name"],
+                    new=history["toState"]["name"],
+                )
+            ]
         ),
         access_scope=[_scope(issue["team"])],
         outcome_signal=outcome_signal,

@@ -2,7 +2,7 @@ import asyncio
 import hashlib
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from app.core.config import settings
 from app.db import get_driver, get_redis
@@ -21,13 +21,16 @@ log = logging.getLogger(__name__)
 
 async def run(event: CanonicalEvent) -> None:
     if not await _dedup(event):
-        log.debug("dedup skip: %s %s", event.metadata.source_platform, event.metadata.native_event_id)
+        log.debug(
+            "dedup skip: %s %s", event.metadata.source_platform, event.metadata.native_event_id
+        )
         return
     actor_id = await _resolve_actor(event)
     await _write_to_graph(event, actor_id)
 
 
 # ── Stage 1: deduplication ────────────────────────────────────────────────────
+
 
 async def _dedup(event: CanonicalEvent) -> bool:
     key = hashlib.sha256(
@@ -39,6 +42,7 @@ async def _dedup(event: CanonicalEvent) -> bool:
 
 # ── Stage 2: identity resolution ─────────────────────────────────────────────
 
+
 async def _resolve_actor(event: CanonicalEvent) -> uuid.UUID:
     native_uid = event.actor_signature.native_user_id
     email = event.actor_signature.email_hint
@@ -49,7 +53,8 @@ async def _resolve_actor(event: CanonicalEvent) -> uuid.UUID:
     async with get_driver().session(database=settings.neo4j_database) as s:
         result = await s.run(
             f"MATCH (a:Actor {{tenant_id: $tid, {id_prop}: $uid}}) RETURN a.id AS id",
-            tid=tenant_id, uid=native_uid,
+            tid=tenant_id,
+            uid=native_uid,
         )
         record = await result.single()
         if record:
@@ -58,16 +63,21 @@ async def _resolve_actor(event: CanonicalEvent) -> uuid.UUID:
         if email:
             result = await s.run(
                 "MATCH (a:Actor {tenant_id: $tid, name: $email}) RETURN a.id AS id",
-                tid=tenant_id, email=email,
+                tid=tenant_id,
+                email=email,
             )
             record = await result.single()
             if record:
                 actor_id = uuid.UUID(record["id"])
                 await s.run(
                     f"MATCH (a:Actor {{tenant_id: $tid, id: $aid}}) SET a.{id_prop} = $uid",
-                    tid=tenant_id, aid=str(actor_id), uid=native_uid,
+                    tid=tenant_id,
+                    aid=str(actor_id),
+                    uid=native_uid,
                 )
-                log.info("actor merge: %s platform uid added to existing actor %s", platform, actor_id)
+                log.info(
+                    "actor merge: %s platform uid added to existing actor %s", platform, actor_id
+                )
                 return actor_id
 
         actor_id = uuid.uuid4()
@@ -83,12 +93,13 @@ async def _resolve_actor(event: CanonicalEvent) -> uuid.UUID:
             name=email or native_uid,
             status=ActorStatus.UNVERIFIED.value,
             uid=native_uid,
-            ts=datetime.now(timezone.utc).isoformat(),
+            ts=datetime.now(UTC).isoformat(),
         )
         return actor_id
 
 
 # ── Stage 3: graph write ──────────────────────────────────────────────────────
+
 
 async def _write_to_graph(event: CanonicalEvent, actor_id: uuid.UUID) -> None:
     tenant_id = str(event.metadata.tenant_id)
@@ -98,7 +109,9 @@ async def _write_to_graph(event: CanonicalEvent, actor_id: uuid.UUID) -> None:
         await _create_edges(s, event, tenant_id, actor_id, event_id, thread_id)
 
     if event.delta_payload.text_content:
-        event_vector = await _store_event_embedding(event_id, tenant_id, event.delta_payload.text_content)
+        event_vector = await _store_event_embedding(
+            event_id, tenant_id, event.delta_payload.text_content
+        )
         if event_vector:
             await _update_thread_embedding(thread_id, tenant_id, event_vector)
             await _enqueue_thread_linking(thread_id, tenant_id)
@@ -164,9 +177,7 @@ def _thread_title(event: CanonicalEvent) -> str | None:
 
 
 async def _create_event(session, event: CanonicalEvent, tenant_id: str) -> uuid.UUID:
-    delta_fields = [
-        f"{m.field}: {m.old} -> {m.new}" for m in event.delta_payload.field_mutations
-    ]
+    delta_fields = [f"{m.field}: {m.old} -> {m.new}" for m in event.delta_payload.field_mutations]
     await session.run(
         """
         CREATE (e:Event {
@@ -188,7 +199,7 @@ async def _create_event(session, event: CanonicalEvent, tenant_id: str) -> uuid.
         text=event.delta_payload.text_content or "",
         dfields=delta_fields,
         enrichment=SemanticEnrichment.PENDING.value,
-        now=datetime.now(timezone.utc).isoformat(),
+        now=datetime.now(UTC).isoformat(),
     )
     return event.transaction_id
 
@@ -209,7 +220,10 @@ async def _create_edges(
         MATCH (e:Event {tenant_id: $tid, id: $eid})
         CREATE (a)-[:EXECUTED {timestamp: $ts}]->(e)
         """,
-        tid=tenant_id, aid=str(actor_id), eid=str(event_id), ts=ts,
+        tid=tenant_id,
+        aid=str(actor_id),
+        eid=str(event_id),
+        ts=ts,
     )
     await session.run(
         """
@@ -217,7 +231,10 @@ async def _create_edges(
         MATCH (t:Thread {tenant_id: $tid, id: $thid})
         CREATE (e)-[:PART_OF {timestamp: $ts}]->(t)
         """,
-        tid=tenant_id, eid=str(event_id), thid=str(thread_id), ts=ts,
+        tid=tenant_id,
+        eid=str(event_id),
+        thid=str(thread_id),
+        ts=ts,
     )
 
     for scope in event.access_scope:
@@ -235,21 +252,27 @@ async def _create_edges(
             gid=str(uuid.uuid4()),
             platform=event.metadata.source_platform.value,
             kind=_group_kind(scope.principal_type),
-            now=datetime.now(timezone.utc).isoformat(),
+            now=datetime.now(UTC).isoformat(),
             thid=str(thread_id),
         )
 
 
 # ── Embeddings ────────────────────────────────────────────────────────────────
 
-async def _store_event_embedding(event_id: uuid.UUID, tenant_id: str, text: str) -> list[float] | None:
+
+async def _store_event_embedding(
+    event_id: uuid.UUID, tenant_id: str, text: str
+) -> list[float] | None:
     from app.extraction.embeddings import embed
+
     try:
         vector = await asyncio.get_event_loop().run_in_executor(None, embed, text)
         async with get_driver().session(database=settings.neo4j_database) as session:
             await session.run(
                 "MATCH (e:Event {tenant_id: $tid, id: $eid}) SET e.embedding = $vec",
-                tid=tenant_id, eid=str(event_id), vec=vector,
+                tid=tenant_id,
+                eid=str(event_id),
+                vec=vector,
             )
         return vector
     except Exception as e:
@@ -257,7 +280,9 @@ async def _store_event_embedding(event_id: uuid.UUID, tenant_id: str, text: str)
         return None
 
 
-async def _update_thread_embedding(thread_id: uuid.UUID, tenant_id: str, new_vector: list[float]) -> None:
+async def _update_thread_embedding(
+    thread_id: uuid.UUID, tenant_id: str, new_vector: list[float]
+) -> None:
     """Incrementally update thread embedding as running mean of all event embeddings."""
     async with get_driver().session(database=settings.neo4j_database) as session:
         result = await session.run(
@@ -265,7 +290,8 @@ async def _update_thread_embedding(thread_id: uuid.UUID, tenant_id: str, new_vec
             MATCH (t:Thread {tenant_id: $tid, id: $thid})
             RETURN t.embedding AS emb, t.embedding_event_count AS n
             """,
-            tid=tenant_id, thid=str(thread_id),
+            tid=tenant_id,
+            thid=str(thread_id),
         )
         record = await result.single()
         if not record:
@@ -284,13 +310,17 @@ async def _update_thread_embedding(thread_id: uuid.UUID, tenant_id: str, new_vec
             MATCH (t:Thread {tenant_id: $tid, id: $thid})
             SET t.embedding = $emb, t.embedding_event_count = $n
             """,
-            tid=tenant_id, thid=str(thread_id), emb=updated, n=n + 1,
+            tid=tenant_id,
+            thid=str(thread_id),
+            emb=updated,
+            n=n + 1,
         )
 
 
 async def _enqueue_thread_linking(thread_id: uuid.UUID, tenant_id: str) -> None:
     try:
         from app.db import get_arq_pool
+
         pool = get_arq_pool()
         await pool.enqueue_job("link_related_threads", str(thread_id), tenant_id)
     except Exception as e:
@@ -299,6 +329,7 @@ async def _enqueue_thread_linking(thread_id: uuid.UUID, tenant_id: str) -> None:
 
 # ── Outcomes ──────────────────────────────────────────────────────────────────
 
+
 async def _create_outcome(
     trigger_thread_id: uuid.UUID,
     tenant_id: str,
@@ -306,7 +337,7 @@ async def _create_outcome(
     trigger_platform: SourcePlatform,
     trigger_native_id: str,
 ) -> None:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     outcome_id = uuid.uuid4()
 
     async with get_driver().session(database=settings.neo4j_database) as session:
@@ -320,10 +351,13 @@ async def _create_outcome(
             UNWIND all_threads AS t
             RETURN DISTINCT t.id AS thread_id, t.title AS title
             """,
-            tid=tenant_id, thid=str(trigger_thread_id),
+            tid=tenant_id,
+            thid=str(trigger_thread_id),
             conf_threshold=0.65,
         )
-        cluster_threads = [{"id": r["thread_id"], "title": r["title"]} async for r in cluster_result]
+        cluster_threads = [
+            {"id": r["thread_id"], "title": r["title"]} async for r in cluster_result
+        ]
         cluster_ids = [t["id"] for t in cluster_threads]
 
         # Find earliest event across entire cluster
@@ -333,14 +367,15 @@ async def _create_outcome(
             MATCH (e:Event)-[:PART_OF]->(t:Thread {id: tid_val, tenant_id: $tenant})
             RETURN min(e.created_at) AS first_event_at
             """,
-            thread_ids=cluster_ids, tenant=tenant_id,
+            thread_ids=cluster_ids,
+            tenant=tenant_id,
         )
         earliest_record = await earliest_result.single()
         first_event_at = None
         if earliest_record and earliest_record["first_event_at"]:
             first_event_at = datetime.fromisoformat(earliest_record["first_event_at"])
             if first_event_at.tzinfo is None:
-                first_event_at = first_event_at.replace(tzinfo=timezone.utc)
+                first_event_at = first_event_at.replace(tzinfo=UTC)
 
         duration_ms = int((now - first_event_at).total_seconds() * 1000) if first_event_at else None
         contributing_count = len(cluster_ids)
@@ -388,8 +423,12 @@ async def _create_outcome(
             CREATE (t)-[:RESULTED_IN {role: $role, timestamp: $now}]->(o)
             SET t.status = $concluded, t.resolved_at = $now
             """,
-            tid=tenant_id, thid=str(trigger_thread_id), oid=str(outcome_id),
-            role="trigger", now=now.isoformat(), concluded=ThreadStatus.CONCLUDED.value,
+            tid=tenant_id,
+            thid=str(trigger_thread_id),
+            oid=str(outcome_id),
+            role="trigger",
+            now=now.isoformat(),
+            concluded=ThreadStatus.CONCLUDED.value,
         )
 
         # Link contributing threads (stay ACTIVE — can contribute to future outcomes)
@@ -402,13 +441,19 @@ async def _create_outcome(
                 MATCH (o:Outcome {tenant_id: $tid, id: $oid})
                 CREATE (t)-[:RESULTED_IN {role: $role, timestamp: $now}]->(o)
                 """,
-                tid=tenant_id, thid=t["id"], oid=str(outcome_id),
-                role="contributing", now=now.isoformat(),
+                tid=tenant_id,
+                thid=t["id"],
+                oid=str(outcome_id),
+                role="contributing",
+                now=now.isoformat(),
             )
 
     log.info(
         "outcome created: %s type=%s threads=%d duration_days=%s",
-        outcome_id, outcome_type.value, contributing_count, duration_days,
+        outcome_id,
+        outcome_type.value,
+        contributing_count,
+        duration_days,
     )
 
 

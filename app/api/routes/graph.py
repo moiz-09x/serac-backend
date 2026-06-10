@@ -83,7 +83,9 @@ async def get_graph():
                 src, tgt = row.get("source"), row.get("target")
                 if src and tgt:
                     links.append(
-                        GraphLink(source=str(src), target=str(tgt), type=row["rel_type"] or "RELATED")
+                        GraphLink(
+                            source=str(src), target=str(tgt), type=row["rel_type"] or "RELATED"
+                        )
                     )
 
     return GraphData(nodes=nodes, links=links)

@@ -24,10 +24,14 @@ def build_graph():
 
     graph.set_entry_point("decompose")
     graph.add_edge("decompose", "search")
-    graph.add_conditional_edges("search", _route_after_search, {
-        "expand": "expand",
-        "no_context": "no_context",
-    })
+    graph.add_conditional_edges(
+        "search",
+        _route_after_search,
+        {
+            "expand": "expand",
+            "no_context": "no_context",
+        },
+    )
     graph.add_edge("expand", "synthesise")
     graph.add_edge("synthesise", "verify")
     graph.add_edge("verify", END)

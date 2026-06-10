@@ -39,8 +39,8 @@ class Settings(BaseSettings):
     linear_api_key: str = ""
     linear_webhook_secret: str = ""
 
-    slack_app_token: str = ""   # xapp-... (Socket Mode token)
-    slack_bot_token: str = ""   # xoxb-... (Bot token)
+    slack_app_token: str = ""  # xapp-... (Socket Mode token)
+    slack_bot_token: str = ""  # xoxb-... (Bot token)
 
     notion_api_key: str = ""
     notion_webhook_secret: str = ""

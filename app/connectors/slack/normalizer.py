@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from app.schemas import (
     AccessScopeItem,
@@ -14,7 +14,7 @@ from app.schemas import (
 
 
 def _ts(slack_ts: str) -> datetime:
-    return datetime.fromtimestamp(float(slack_ts), tz=timezone.utc)
+    return datetime.fromtimestamp(float(slack_ts), tz=UTC)
 
 
 def _scope(channel_id: str, is_private: bool) -> AccessScopeItem:

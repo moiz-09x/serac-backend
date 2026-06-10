@@ -68,11 +68,14 @@ def _verify_notion_signature(request: Request, body: bytes) -> None:
     if not settings.notion_webhook_secret:
         return
     sig = request.headers.get("x-notion-signature", "")
-    expected = "v0=" + hmac.new(
-        settings.notion_webhook_secret.encode(),
-        body,
-        hashlib.sha256,
-    ).hexdigest()
+    expected = (
+        "v0="
+        + hmac.new(
+            settings.notion_webhook_secret.encode(),
+            body,
+            hashlib.sha256,
+        ).hexdigest()
+    )
     if not hmac.compare_digest(sig, expected):
         raise HTTPException(status_code=401, detail="Invalid webhook signature")
 
