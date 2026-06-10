@@ -34,9 +34,11 @@ async def lifespan(app: FastAPI):
     await init_engine()
     await init_pool()
     await init_arq_pool()
-    await slack_socket.start()
+    if settings.slack_mode == "socket":
+        await slack_socket.start()
     yield
-    await slack_socket.stop()
+    if settings.slack_mode == "socket":
+        await slack_socket.stop()
     await close_arq_pool()
     await close_pool()
     await close_engine()

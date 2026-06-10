@@ -57,6 +57,10 @@ class Settings(BaseSettings):
     linear_api_key: str = ""
     linear_webhook_secret: str = ""
 
+    # "socket" for local/self-hosted, "webhook" for cloud deployment
+    slack_mode: str = "socket"
+    slack_signing_secret: str = ""  # for webhook mode — verifies requests from Slack
+
     slack_app_token: str = ""  # xapp-... (Socket Mode token)
     slack_bot_token: str = ""  # xoxb-... (Bot token)
 
