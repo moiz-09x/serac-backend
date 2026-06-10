@@ -1,3 +1,5 @@
+import logging
+
 from arq import cron
 from arq.connections import RedisSettings
 
@@ -42,6 +44,26 @@ async def mark_stalled_threads(ctx: dict) -> None:
         )
 
 
+log = logging.getLogger(__name__)
+
+
+async def refresh_expiring_tokens(ctx: dict) -> None:
+    """Refresh OAuth tokens expiring within the next hour."""
+    from app.connectors.credentials import credentials
+    from app.connectors.crypto import decrypt
+
+    expiring = await credentials.get_expiring(within_seconds=3600)
+    for cred in expiring:
+        try:
+            if cred.integration == "notion":
+                # Notion tokens don't expire in practice (1-year TTL, no refresh flow)
+                continue
+            # Linear and Slack tokens are long-lived — placeholder for future refresh logic
+            log.info("Token refresh check: %s / %s", cred.tenant_id, cred.integration)
+        except Exception:
+            log.exception("Failed to refresh token for %s / %s", cred.tenant_id, cred.integration)
+
+
 async def startup(ctx: dict) -> None:
     await init_driver()
     await init_engine()
@@ -57,8 +79,11 @@ async def shutdown(ctx: dict) -> None:
 
 
 class WorkerSettings:
-    functions = [process_event, mark_stalled_threads, link_related_threads]
-    cron_jobs = [cron(mark_stalled_threads, hour=2, minute=0)]
+    functions = [process_event, mark_stalled_threads, link_related_threads, refresh_expiring_tokens]
+    cron_jobs = [
+        cron(mark_stalled_threads, hour=2, minute=0),
+        cron(refresh_expiring_tokens, minute={0, 30}),  # every 30 mins
+    ]
     on_startup = startup
     on_shutdown = shutdown
     redis_settings = RedisSettings.from_dsn(settings.redis_url)

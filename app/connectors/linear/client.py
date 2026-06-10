@@ -4,9 +4,9 @@ _URL = "https://api.linear.app/graphql"
 
 
 class LinearClient:
-    def __init__(self, api_key: str) -> None:
+    def __init__(self, access_token: str) -> None:
         self._http = httpx.AsyncClient(
-            headers={"Authorization": api_key, "Content-Type": "application/json"},
+            headers={"Authorization": access_token, "Content-Type": "application/json"},
             timeout=30.0,
         )
 

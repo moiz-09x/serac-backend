@@ -10,8 +10,17 @@ from app.extraction import pipeline
 log = logging.getLogger(__name__)
 
 
+async def _resolve_token(tenant_id: uuid.UUID) -> str | None:
+    from app.connectors.credentials import credentials as cred_store
+    try:
+        return await cred_store.get_token(str(tenant_id), "slack")
+    except LookupError:
+        return None  # fall back to settings.slack_bot_token via get_web_client()
+
+
 async def run(tenant_id: uuid.UUID) -> None:
-    client = get_web_client()
+    token = await _resolve_token(tenant_id)
+    client = get_web_client(token)
     cutoff = str((datetime.now(UTC) - timedelta(days=365)).timestamp())
 
     resp = await client.conversations_list(types="public_channel,private_channel", limit=200)

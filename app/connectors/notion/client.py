@@ -5,11 +5,11 @@ _VERSION = "2022-06-28"
 
 
 class NotionClient:
-    def __init__(self, api_key: str) -> None:
+    def __init__(self, access_token: str) -> None:
         self._http = httpx.AsyncClient(
             base_url=_BASE,
             headers={
-                "Authorization": f"Bearer {api_key}",
+                "Authorization": f"Bearer {access_token}",
                 "Notion-Version": _VERSION,
                 "Content-Type": "application/json",
             },

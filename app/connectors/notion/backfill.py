@@ -55,9 +55,17 @@ async def extract_page_text(client: NotionClient, block_id: str, depth: int = 0)
     return "\n".join(parts)
 
 
-async def run(tenant_id: uuid.UUID, api_key: str) -> None:
+async def _resolve_token(tenant_id: uuid.UUID, api_key: str | None) -> str:
+    if api_key:
+        return api_key
+    from app.connectors.credentials import credentials
+    return await credentials.get_token(str(tenant_id), "notion")
+
+
+async def run(tenant_id: uuid.UUID, api_key: str | None = None) -> None:
+    token = await _resolve_token(tenant_id, api_key)
     cutoff = datetime.now(UTC) - timedelta(days=365)
-    async with NotionClient(api_key) as client:
+    async with NotionClient(token) as client:
         await _backfill_pages(client, tenant_id, cutoff)
 
 

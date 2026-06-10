@@ -93,7 +93,13 @@ async def _handle_notion(payload: dict) -> None:
     if not page_id or event_type not in ("page.created", "page.updated"):
         return
 
-    async with NotionClient(settings.notion_api_key) as client:
+    from app.connectors.credentials import credentials as cred_store
+    try:
+        notion_token = await cred_store.get_token(str(tenant_id), "notion")
+    except LookupError:
+        notion_token = settings.notion_api_key
+
+    async with NotionClient(notion_token) as client:
         page = await client.get_page(page_id)
         text = await extract_page_text(client, page_id)
         if event_type == "page.created":

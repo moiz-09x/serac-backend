@@ -34,7 +34,25 @@ class Settings(BaseSettings):
     synthesis_provider: str = "deepseek"
     synthesis_model: str = "deepseek-chat"
 
-    # ── Connectors ────────────────────────────────────────────────────────────
+    # ── Server ────────────────────────────────────────────────────────────────
+    base_url: str = "http://localhost:8000"
+
+    # ── OAuth credentials ─────────────────────────────────────────────────────
+    # 256-bit AES key for encrypting tokens at rest: openssl rand -base64 32
+    token_encryption_key: str = ""
+    # HMAC secret for signing OAuth state params: openssl rand -hex 32
+    oauth_state_secret: str = "change-me-in-production"
+
+    notion_client_id: str = ""
+    notion_client_secret: str = ""
+
+    linear_client_id: str = ""
+    linear_client_secret: str = ""
+
+    slack_client_id: str = ""
+    slack_client_secret: str = ""
+
+    # ── Connectors (legacy / self-hosted fallback) ────────────────────────────
     tenant_id: str = ""
     linear_api_key: str = ""
     linear_webhook_secret: str = ""
