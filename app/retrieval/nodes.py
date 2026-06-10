@@ -149,6 +149,7 @@ async def expand(state: RetrievalState) -> dict:
 
             thread_contexts.append(ThreadContext(
                 thread_id=thread_id,
+                platform=row["platform"] or "",
                 status=row["status"] or "Unknown",
                 created_at=row["created_at"] or "",
                 resolved_at=row["resolved_at"],

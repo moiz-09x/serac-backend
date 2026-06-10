@@ -3,10 +3,12 @@ import uuid
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 logging.basicConfig(level=logging.INFO)
 
 from app.api.routes import health, webhooks
+from app.api.routes.graph import router as graph_router
 from app.api.routes.query import router as query_router
 from app.connectors.linear import backfill as linear_backfill
 from app.connectors.notion import backfill as notion_backfill
@@ -46,9 +48,18 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://localhost:3001"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 app.include_router(health.router)
 app.include_router(webhooks.router)
 app.include_router(query_router)
+app.include_router(graph_router)
 
 
 @app.get("/")

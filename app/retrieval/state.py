@@ -10,6 +10,7 @@ class ContextItem(TypedDict):
 
 class ThreadContext(TypedDict):
     thread_id: str
+    platform: str
     status: str
     created_at: str
     resolved_at: str | None
