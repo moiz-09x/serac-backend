@@ -8,7 +8,6 @@ from .enums import (
     GoverningDocStatus,
     GoverningDocType,
     GroupKind,
-    OutcomeType,
     SemanticEnrichment,
     SourcePlatform,
     ThreadStatus,
@@ -67,15 +66,6 @@ class GoverningDoc(NodeBase):
     version: str | None = None
     content_hash: str | None = None  # SHA-256; used for idempotent re-ingestion
     raw_text_uri: str | None = None
-
-
-class Outcome(NodeBase):
-    type: OutcomeType
-    duration_ms: int | None = None
-    summary: str | None = None
-    contributing_thread_count: int = 0
-    trigger_platform: SourcePlatform | None = None
-    trigger_native_id: str | None = None
 
 
 class Client(NodeBase):

@@ -1,4 +1,3 @@
-from arq import cron
 from arq.connections import RedisSettings
 
 from app.core.config import settings
@@ -15,31 +14,11 @@ from app.db import (
 from app.extraction import pipeline
 from app.extraction.thread_linker import link_related_threads
 from app.schemas import CanonicalEvent
-from app.schemas.enums import ThreadStatus
 
 
 async def process_event(ctx: dict, event_data: dict) -> None:
     event = CanonicalEvent.model_validate(event_data)
     await pipeline.run(event)
-
-
-async def mark_stalled_threads(ctx: dict) -> None:
-    """Mark Active threads with no event activity in the last 30 days as Stalled."""
-    from app.db import get_driver
-
-    async with get_driver().session(database=settings.neo4j_database) as session:
-        await session.run(
-            """
-            MATCH (t:Thread {status: $active})
-            WHERE NOT EXISTS {
-                MATCH (e:Event)-[:PART_OF]->(t)
-                WHERE e.timestamp > datetime() - duration('P30D')
-            }
-            SET t.status = $stalled
-            """,
-            active=ThreadStatus.ACTIVE.value,
-            stalled=ThreadStatus.STALLED.value,
-        )
 
 
 async def startup(ctx: dict) -> None:
@@ -57,8 +36,8 @@ async def shutdown(ctx: dict) -> None:
 
 
 class WorkerSettings:
-    functions = [process_event, mark_stalled_threads, link_related_threads]
-    cron_jobs = [cron(mark_stalled_threads, hour=2, minute=0)]
+    functions = [process_event, link_related_threads]
+    cron_jobs = []
     on_startup = startup
     on_shutdown = shutdown
     redis_settings = RedisSettings.from_dsn(settings.redis_url)
