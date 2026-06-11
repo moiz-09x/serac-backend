@@ -31,13 +31,6 @@ class GoverningDocStatus(StrEnum):
     RETIRED = "Retired"
 
 
-class OutcomeType(StrEnum):
-    COMPLETED = "Completed"
-    CANCELLED = "Cancelled"
-    DEAL_WON = "DealWon"
-    DEAL_LOST = "DealLost"
-
-
 class PrincipalType(StrEnum):
     SLACK_CHANNEL = "SlackChannel"
     LINEAR_TEAM = "LinearTeam"

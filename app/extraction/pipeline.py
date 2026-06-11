@@ -14,7 +14,7 @@ from app.schemas import (
     SemanticEnrichment,
     SourcePlatform,
 )
-from app.schemas.enums import OutcomeType, ThreadStatus
+from app.schemas.enums import ThreadStatus
 
 log = logging.getLogger(__name__)
 
@@ -115,15 +115,6 @@ async def _write_to_graph(event: CanonicalEvent, actor_id: uuid.UUID) -> None:
         if event_vector:
             await _update_thread_embedding(thread_id, tenant_id, event_vector)
             await _enqueue_thread_linking(thread_id, tenant_id)
-
-    if event.outcome_signal:
-        await _create_outcome(
-            trigger_thread_id=thread_id,
-            tenant_id=tenant_id,
-            outcome_type=event.outcome_signal,
-            trigger_platform=event.metadata.source_platform,
-            trigger_native_id=event.metadata.native_event_id,
-        )
 
 
 async def _ensure_thread(session, event: CanonicalEvent, tenant_id: str) -> uuid.UUID:
@@ -325,136 +316,6 @@ async def _enqueue_thread_linking(thread_id: uuid.UUID, tenant_id: str) -> None:
         await pool.enqueue_job("link_related_threads", str(thread_id), tenant_id)
     except Exception as e:
         log.warning("failed to enqueue thread linking for %s: %s", thread_id, e)
-
-
-# ── Outcomes ──────────────────────────────────────────────────────────────────
-
-
-async def _create_outcome(
-    trigger_thread_id: uuid.UUID,
-    tenant_id: str,
-    outcome_type: OutcomeType,
-    trigger_platform: SourcePlatform,
-    trigger_native_id: str,
-) -> None:
-    now = datetime.now(UTC)
-    outcome_id = uuid.uuid4()
-
-    async with get_driver().session(database=settings.neo4j_database) as session:
-        # Collect full RELATES_TO cluster via BFS
-        cluster_result = await session.run(
-            """
-            MATCH (trigger:Thread {tenant_id: $tid, id: $thid})
-            OPTIONAL MATCH (trigger)-[rels:RELATES_TO*1..5]-(related:Thread {tenant_id: $tid})
-            WHERE ALL(r IN rels WHERE r.confidence >= $conf_threshold)
-            WITH collect(distinct trigger) + collect(distinct related) AS all_threads
-            UNWIND all_threads AS t
-            RETURN DISTINCT t.id AS thread_id, t.title AS title
-            """,
-            tid=tenant_id,
-            thid=str(trigger_thread_id),
-            conf_threshold=0.65,
-        )
-        cluster_threads = [
-            {"id": r["thread_id"], "title": r["title"]} async for r in cluster_result
-        ]
-        cluster_ids = [t["id"] for t in cluster_threads]
-
-        # Find earliest event across entire cluster
-        earliest_result = await session.run(
-            """
-            UNWIND $thread_ids AS tid_val
-            MATCH (e:Event)-[:PART_OF]->(t:Thread {id: tid_val, tenant_id: $tenant})
-            RETURN min(e.created_at) AS first_event_at
-            """,
-            thread_ids=cluster_ids,
-            tenant=tenant_id,
-        )
-        earliest_record = await earliest_result.single()
-        first_event_at = None
-        if earliest_record and earliest_record["first_event_at"]:
-            first_event_at = datetime.fromisoformat(earliest_record["first_event_at"])
-            if first_event_at.tzinfo is None:
-                first_event_at = first_event_at.replace(tzinfo=UTC)
-
-        duration_ms = int((now - first_event_at).total_seconds() * 1000) if first_event_at else None
-        contributing_count = len(cluster_ids)
-
-        trigger_thread_title = next(
-            (t["title"] for t in cluster_threads if t["id"] == str(trigger_thread_id)), None
-        )
-        duration_days = round(duration_ms / 86_400_000, 1) if duration_ms else None
-        summary = (
-            f"{trigger_platform.value} '{trigger_thread_title or trigger_native_id}' "
-            f"concluded as {outcome_type.value} after {contributing_count} related thread(s) "
-            f"over {duration_days} days."
-        )
-
-        # Create Outcome node
-        await session.run(
-            """
-            CREATE (o:Outcome {
-                id: $oid, tenant_id: $tid,
-                type: $type,
-                duration_ms: $duration,
-                summary: $summary,
-                contributing_thread_count: $contrib_count,
-                trigger_platform: $trigger_platform,
-                trigger_native_id: $trigger_native_id,
-                created_at: $now
-            })
-            """,
-            oid=str(outcome_id),
-            tid=tenant_id,
-            type=outcome_type.value,
-            duration=duration_ms,
-            summary=summary,
-            contrib_count=contributing_count,
-            trigger_platform=trigger_platform.value,
-            trigger_native_id=trigger_native_id,
-            now=now.isoformat(),
-        )
-
-        # Link trigger thread
-        await session.run(
-            """
-            MATCH (t:Thread {tenant_id: $tid, id: $thid})
-            MATCH (o:Outcome {tenant_id: $tid, id: $oid})
-            CREATE (t)-[:RESULTED_IN {role: $role, timestamp: $now}]->(o)
-            SET t.status = $concluded, t.resolved_at = $now
-            """,
-            tid=tenant_id,
-            thid=str(trigger_thread_id),
-            oid=str(outcome_id),
-            role="trigger",
-            now=now.isoformat(),
-            concluded=ThreadStatus.CONCLUDED.value,
-        )
-
-        # Link contributing threads (stay ACTIVE — can contribute to future outcomes)
-        for t in cluster_threads:
-            if t["id"] == str(trigger_thread_id):
-                continue
-            await session.run(
-                """
-                MATCH (t:Thread {tenant_id: $tid, id: $thid})
-                MATCH (o:Outcome {tenant_id: $tid, id: $oid})
-                CREATE (t)-[:RESULTED_IN {role: $role, timestamp: $now}]->(o)
-                """,
-                tid=tenant_id,
-                thid=t["id"],
-                oid=str(outcome_id),
-                role="contributing",
-                now=now.isoformat(),
-            )
-
-    log.info(
-        "outcome created: %s type=%s threads=%d duration_days=%s",
-        outcome_id,
-        outcome_type.value,
-        contributing_count,
-        duration_days,
-    )
 
 
 def _group_kind(principal_type: PrincipalType) -> str:

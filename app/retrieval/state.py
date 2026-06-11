@@ -14,7 +14,6 @@ class ThreadContext(TypedDict):
     status: str
     created_at: str
     resolved_at: str | None
-    outcome_type: str | None
     events: list[dict]
 
 
