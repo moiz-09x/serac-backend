@@ -1,5 +1,6 @@
 import hashlib
 import hmac
+import time
 import uuid
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
@@ -55,6 +56,72 @@ async def _handle_linear(payload: dict) -> None:
         await get_arq_pool().enqueue_job("process_event", event.model_dump(mode="json"))
 
 
+@router.post("/slack")
+async def slack_webhook(request: Request, background_tasks: BackgroundTasks):
+    """Handles Slack Event Subscriptions (webhook mode only)."""
+    body = await request.body()
+    _verify_slack_signature(request, body)
+    payload = await request.json()
+
+    # Slack sends a one-time URL verification challenge when you first save the URL
+    if payload.get("type") == "url_verification":
+        return {"challenge": payload.get("challenge")}
+
+    background_tasks.add_task(_handle_slack, payload)
+    return {"ok": True}
+
+
+def _verify_slack_signature(request: Request, body: bytes) -> None:
+    if not settings.slack_signing_secret:
+        return
+    timestamp = request.headers.get("x-slack-request-timestamp", "")
+    sig = request.headers.get("x-slack-signature", "")
+
+    if abs(time.time() - int(timestamp)) > 300:
+        raise HTTPException(status_code=401, detail="Request too old")
+
+    basestring = f"v0:{timestamp}:{body.decode()}"
+    expected = (
+        "v0="
+        + hmac.new(
+            settings.slack_signing_secret.encode(),
+            basestring.encode(),
+            hashlib.sha256,
+        ).hexdigest()
+    )
+    if not hmac.compare_digest(sig, expected):
+        raise HTTPException(status_code=401, detail="Invalid Slack signature")
+
+
+async def _handle_slack(payload: dict) -> None:
+    from app.connectors.slack.client import get_user_email, get_web_client
+    from app.connectors.slack.normalizer import message_to_event
+
+    event = payload.get("event", {})
+    if event.get("type") not in ("message", "message.channels", "message.groups"):
+        return
+    if event.get("subtype"):
+        return
+
+    tenant_id = uuid.UUID(settings.tenant_id)
+    channel_id = event.get("channel", "")
+    is_private = event.get("channel_type") == "group"
+    user_id = event.get("user", "unknown")
+
+    token = None
+    try:
+        from app.connectors.credentials import credentials as cred_store
+
+        token = await cred_store.get_token(str(tenant_id), "slack")
+    except LookupError:
+        pass
+
+    client = get_web_client(token)
+    email = await get_user_email(client, user_id)
+    canonical = message_to_event(event, channel_id, is_private, tenant_id, email_hint=email)
+    await get_arq_pool().enqueue_job("process_event", canonical.model_dump(mode="json"))
+
+
 @router.post("/notion")
 async def notion_webhook(request: Request, background_tasks: BackgroundTasks):
     body = await request.body()
@@ -93,7 +160,14 @@ async def _handle_notion(payload: dict) -> None:
     if not page_id or event_type not in ("page.created", "page.updated"):
         return
 
-    async with NotionClient(settings.notion_api_key) as client:
+    from app.connectors.credentials import credentials as cred_store
+
+    try:
+        notion_token = await cred_store.get_token(str(tenant_id), "notion")
+    except LookupError:
+        notion_token = settings.notion_api_key
+
+    async with NotionClient(notion_token) as client:
         page = await client.get_page(page_id)
         text = await extract_page_text(client, page_id)
         if event_type == "page.created":

@@ -52,9 +52,18 @@ query($teamId: ID!, $after: String, $createdAfter: DateTimeOrDuration) {
 """
 
 
-async def run(tenant_id: uuid.UUID, api_key: str) -> None:
+async def _resolve_token(tenant_id: uuid.UUID, api_key: str | None) -> str:
+    if api_key:
+        return api_key
+    from app.connectors.credentials import credentials
+
+    return await credentials.get_token(str(tenant_id), "linear")
+
+
+async def run(tenant_id: uuid.UUID, api_key: str | None = None) -> None:
+    token = await _resolve_token(tenant_id, api_key)
     cutoff = (datetime.now(UTC) - timedelta(days=365)).isoformat()
-    async with LinearClient(api_key) as client:
+    async with LinearClient(token) as client:
         data = await client.query(_TEAMS_QUERY)
         for team in data["teams"]["nodes"]:
             await _backfill_team(client, team["id"], tenant_id, cutoff)

@@ -5,8 +5,8 @@ from app.core.config import settings
 _email_cache: dict[str, str | None] = {}
 
 
-def get_web_client() -> AsyncWebClient:
-    return AsyncWebClient(token=settings.slack_bot_token)
+def get_web_client(token: str | None = None) -> AsyncWebClient:
+    return AsyncWebClient(token=token or settings.slack_bot_token)
 
 
 async def get_user_email(client: AsyncWebClient, user_id: str) -> str | None:

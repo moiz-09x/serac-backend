@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes import health, webhooks
 from app.api.routes.graph import router as graph_router
+from app.api.routes.integrations import router as integrations_router
 from app.api.routes.query import router as query_router
 from app.connectors.linear import backfill as linear_backfill
 from app.connectors.notion import backfill as notion_backfill
@@ -33,9 +34,11 @@ async def lifespan(app: FastAPI):
     await init_engine()
     await init_pool()
     await init_arq_pool()
-    await slack_socket.start()
+    if settings.slack_mode == "socket":
+        await slack_socket.start()
     yield
-    await slack_socket.stop()
+    if settings.slack_mode == "socket":
+        await slack_socket.stop()
     await close_arq_pool()
     await close_pool()
     await close_engine()
@@ -60,6 +63,7 @@ app.include_router(health.router)
 app.include_router(webhooks.router)
 app.include_router(query_router)
 app.include_router(graph_router)
+app.include_router(integrations_router)
 
 
 @app.get("/")
